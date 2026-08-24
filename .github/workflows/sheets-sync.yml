@@ -91,21 +91,36 @@ jobs:
 
       - name: Run ${{ inputs.mode }} (attempt ${{ inputs.attempt }})
         id: sync
+        # Inputs travel as env vars and are never interpolated into the script
+        # body. jobs_json and database_config are JSON: substituted textually,
+        # their double quotes close the shell quoting, so Python received
+        # {name:Payroll} instead of {"name":"Payroll"} and exited 2 on
+        # JSONDecodeError - before the status block or the retry output were
+        # written. That broke every database run and every retry carrying rows.
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SA_KEY }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SS_MODE: ${{ inputs.mode }}
+          SS_EXECUTION: ${{ inputs.execution }}
+          SS_SPREADSHEET_ID: ${{ inputs.settings_spreadsheet_id }}
+          SS_REQUESTED_BY: ${{ inputs.requested_by }}
+          SS_TIMEZONE: ${{ inputs.timezone || 'UTC' }}
+          SS_JOBS_JSON: ${{ inputs.jobs_json }}
+          SS_DATABASE_CONFIG: ${{ inputs.database_config }}
+          SS_ATTEMPT: ${{ inputs.attempt }}
+          SS_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           DRY_RUN=""
-          if [ "${{ inputs.dry_run }}" = "true" ]; then DRY_RUN="--dry-run"; fi
+          if [ "$SS_DRY_RUN" = "true" ]; then DRY_RUN="--dry-run"; fi
           python -m sheets_sync $DRY_RUN \
-            --mode "${{ inputs.mode }}" \
-            --execution "${{ inputs.execution }}" \
-            --settings-spreadsheet-id "${{ inputs.settings_spreadsheet_id }}" \
-            --user "${{ inputs.requested_by }}" \
-            --timezone "${{ inputs.timezone || 'UTC' }}" \
-            --jobs-json "${{ inputs.jobs_json }}" \
-            --database-config "${{ inputs.database_config }}" \
-            --attempt "${{ inputs.attempt }}" \
+            --mode "$SS_MODE" \
+            --execution "$SS_EXECUTION" \
+            --settings-spreadsheet-id "$SS_SPREADSHEET_ID" \
+            --user "$SS_REQUESTED_BY" \
+            --timezone "$SS_TIMEZONE" \
+            --jobs-json "$SS_JOBS_JSON" \
+            --database-config "$SS_DATABASE_CONFIG" \
+            --attempt "$SS_ATTEMPT" \
             --retry-file retry.json
 
       # Google was down or throttling and rows are still pending: dispatch a new
