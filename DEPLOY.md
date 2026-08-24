@@ -6,11 +6,11 @@ machine, with your credentials.
 ## 1. Create the repo and push
 
 ```bash
-# from the unpacked folder
-gh repo create Fuelfinance-GS-setup/sheets-sync --private --source=. --push
+# already done: the repo lives at github.com/fuel-artem/sheets-sync (private)
+gh repo create fuel-artem/sheets-sync --private --source=. --push
 
 # or, without gh
-git remote add origin git@github.com:Fuelfinance-GS-setup/sheets-sync.git
+git remote add origin git@github.com:fuel-artem/sheets-sync.git
 git push -u origin main
 ```
 

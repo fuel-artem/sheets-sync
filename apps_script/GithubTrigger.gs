@@ -5,16 +5,25 @@
  * `sheets-sync.yml`, which reads the same Import/Export Settings tabs and
  * writes the status block back into J2:J4.
  *
- * One-time setup (Project Settings -> Script Properties):
+ * Everything that says *where* to dispatch is a constant below. The only thing
+ * left in Project Settings -> Script Properties is the credential:
  *   GITHUB_TOKEN  fine-grained PAT with "Actions: read and write" on the repo
- *   GITHUB_OWNER  optional, overrides the constant below
- *   GITHUB_REPO   optional, overrides the constant below
+ *
+ * It stays a property rather than a constant because Apps Script source is
+ * readable by every editor of this spreadsheet, travels with File > Make a copy,
+ * and is retained in the project's version history. A Script Property is none of
+ * those things. Inline it only if you accept that.
  */
 
-const GITHUB_OWNER = 'Fuelfinance-GS-setup';
+const GITHUB_OWNER = 'fuel-artem';
 const GITHUB_REPO = 'sheets-sync';
 const WORKFLOW_FILE = 'sheets-sync.yml';
 const GIT_REF = 'main';
+
+// Pinned REST API version. GitHub currently supports '2026-03-10' and the older
+// '2022-11-28'. Only the dispatch POST is called and it answers 204 with no body,
+// so there is no response shape a version bump could break.
+const GITHUB_API_VERSION = '2026-03-10';
 
 // true  -> the enabled rows are read here and sent in the payload
 // false -> only the spreadsheet id is sent and Python reads the tabs itself
@@ -88,10 +97,9 @@ function triggerExport() {
  * @param {boolean} [silent=false] - no UI alerts (for time-driven triggers)
  */
 function dispatchWorkflow_(mode, execution, silent) {
-  const props = PropertiesService.getScriptProperties();
-  const token = props.getProperty('GITHUB_TOKEN');
-  const owner = props.getProperty('GITHUB_OWNER') || GITHUB_OWNER;
-  const repo = props.getProperty('GITHUB_REPO') || GITHUB_REPO;
+  const owner = GITHUB_OWNER;
+  const repo = GITHUB_REPO;
+  const token = PropertiesService.getScriptProperties().getProperty('GITHUB_TOKEN');
 
   if (!token) {
     const msg = 'GITHUB_TOKEN is not set in Script Properties.';
@@ -135,7 +143,7 @@ function dispatchWorkflow_(mode, execution, silent) {
     headers: {
       Authorization: 'Bearer ' + token,
       Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28'
+      'X-GitHub-Api-Version': GITHUB_API_VERSION
     },
     payload: JSON.stringify({ ref: GIT_REF, inputs: inputs })
   });
@@ -202,9 +210,8 @@ function collectJobs_(mode, execution) {
 }
 
 function openActionsLog() {
-  const props = PropertiesService.getScriptProperties();
-  const owner = props.getProperty('GITHUB_OWNER') || GITHUB_OWNER;
-  const repo = props.getProperty('GITHUB_REPO') || GITHUB_REPO;
+  const owner = GITHUB_OWNER;
+  const repo = GITHUB_REPO;
   const url =
     'https://github.com/' + owner + '/' + repo + '/actions/workflows/' + WORKFLOW_FILE;
   const html = HtmlService.createHtmlOutput(

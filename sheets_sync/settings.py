@@ -73,12 +73,18 @@ class SyncJob:
 
 
 def is_checked(value: Any) -> bool:
-    """Checkbox truthiness, tolerant of TRUE/true/1/yes coming back as strings."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return str(value).strip().lower() in {"true", "yes", "y", "1", "âœ“", "x"}
+    """
+    Checkbox truthiness.
+
+    Both callers read the settings tab with UNFORMATTED_VALUE, so a real
+    checkbox arrives as a JSON bool and that is the only case in play. bool()
+    is also the JS truthiness the original script used, which keeps the parity
+    rule the rest of this package follows.
+
+    One inherited edge: bool("FALSE") is True, so a flag cell holding the text
+    FALSE rather than a checkbox counts as enabled - as it did in Apps Script.
+    """
+    return bool(value)
 
 
 def read_jobs(
