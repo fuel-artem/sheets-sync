@@ -189,6 +189,15 @@ Meanwhile J2 says which of the three is happening:
 - attempts exhausted → `Gave up after 4 attempts … Not synced: Payroll.`
 - permanent → the error itself, e.g. `Payroll: HTTP 403 (permissiondenied): caller does not have permission`
 
+A run can hit both kinds at once. J2 then carries the permanent error and the retry note
+separated by ` | `, so a row a human must fix never hides a retry that is still coming:
+
+> `Payroll: HTTP 403 (permissiondenied): ... | Google Sheets temporarily unavailable.
+> Retry 2 of 4 scheduled for 08/24/2026 18:51:11. Waiting on: Taxes. Last error - HTTP 503 ...`
+
+If the settings tab itself is what failed transiently there are no rows to name, and the
+note reads `Waiting on: settings`.
+
 A permanent failure in one row no longer aborts the rest of the run (the Apps Script version
 stopped at the first exception); the remaining rows still sync and every failure is listed in
 J2 and in the run summary.
