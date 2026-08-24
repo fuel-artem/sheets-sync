@@ -1,0 +1,128 @@
+name: sheets-sync
+
+# Every parameter arrives with the dispatch that started the run - from the sheet
+# button, or from this workflow re-dispatching itself for a retry. There is no
+# repository variable holding a spreadsheet id, and no cron: a run with no caller
+# is a run against nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Which run: a plain import/export, or the database rebuild"
+        type: choice
+        options: [import, export, database]
+        required: true
+        default: import
+      execution:
+        description: "manual = the manual checkbox column, trigger = the scheduled one"
+        type: choice
+        options: [manual, trigger]
+        required: true
+        default: manual
+      settings_spreadsheet_id:
+        description: "Spreadsheet holding the Import/Export Settings tabs"
+        required: true
+      requested_by:
+        description: "Email written to the status block (J4)"
+        required: false
+        default: ""
+      timezone:
+        description: "Spreadsheet timezone, used for the J3 timestamp"
+        required: false
+        default: "UTC"
+      jobs_json:
+        description: "Inline job list; on a retry this is the rows that did not make it"
+        required: false
+        default: ""
+      database_config:
+        description: "Database layout JSON (transaction_length, keep_columns, ai_ranges, ...)"
+        required: false
+        default: ""
+      attempt:
+        description: "Attempt number; the sheet always sends 1"
+        required: false
+        default: "1"
+      not_before:
+        description: "ISO timestamp the run should wait for (set by a scheduled retry)"
+        required: false
+        default: ""
+      dry_run:
+        description: "List the rows that would run and write nothing"
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  # Attempt is part of the key so a waiting retry never blocks a fresh click.
+  group: sheets-sync-${{ inputs.settings_spreadsheet_id }}-${{ inputs.mode }}-${{ inputs.attempt }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # A scheduled retry starts immediately and waits here. The cap keeps a
+      # stuck run from holding a runner for hours.
+      - name: Wait for the scheduled retry time
+        if: inputs.not_before != ''
+        env:
+          NOT_BEFORE: ${{ inputs.not_before }}
+          MAX_WAIT_MINUTES: ${{ vars.MAX_WAIT_MINUTES || '120' }}
+        run: |
+          python - <<'PY'
+          import os, time
+          from datetime import datetime, timezone
+          target = datetime.fromisoformat(os.environ["NOT_BEFORE"])
+          cap = float(os.environ["MAX_WAIT_MINUTES"]) * 60
+          wait = min(max((target - datetime.now(timezone.utc)).total_seconds(), 0), cap)
+          print(f"waiting {wait:.0f}s until {target.isoformat()}")
+          time.sleep(wait)
+          PY
+
+      - name: Run ${{ inputs.mode }} (attempt ${{ inputs.attempt }})
+        id: sync
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SA_KEY }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          DRY_RUN=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then DRY_RUN="--dry-run"; fi
+          python -m sheets_sync $DRY_RUN \
+            --mode "${{ inputs.mode }}" \
+            --execution "${{ inputs.execution }}" \
+            --settings-spreadsheet-id "${{ inputs.settings_spreadsheet_id }}" \
+            --user "${{ inputs.requested_by }}" \
+            --timezone "${{ inputs.timezone || 'UTC' }}" \
+            --jobs-json "${{ inputs.jobs_json }}" \
+            --database-config "${{ inputs.database_config }}" \
+            --attempt "${{ inputs.attempt }}" \
+            --retry-file retry.json
+
+      # Google was down or throttling and rows are still pending: dispatch a new
+      # run carrying the same parameters plus the rows that failed.
+      # This needs a PAT - events created with the built-in GITHUB_TOKEN do not
+      # start new workflow runs.
+      - name: Schedule the retry
+        if: always() && steps.sync.outputs.retry == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RETRY_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::rows were deferred but RETRY_DISPATCH_TOKEN is not set, so no retry was scheduled"
+            exit 1
+          fi
+          jq -c --arg ref "${GITHUB_REF_NAME}" '{ref: $ref, inputs: .inputs}' retry.json \
+            | gh api --method POST \
+                "/repos/${GITHUB_REPOSITORY}/actions/workflows/sheets-sync.yml/dispatches" \
+                --input -
+          echo "::notice::retry $(jq -r '.attempt' retry.json) scheduled for $(jq -r '.not_before' retry.json)"
