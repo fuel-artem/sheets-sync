@@ -72,21 +72,6 @@ class SyncJob:
         return asdict(self)
 
 
-def is_checked(value: Any) -> bool:
-    """
-    Checkbox truthiness.
-
-    Both callers read the settings tab with UNFORMATTED_VALUE, so a real
-    checkbox arrives as a JSON bool and that is the only case in play. bool()
-    is also the JS truthiness the original script used, which keeps the parity
-    rule the rest of this package follows.
-
-    One inherited edge: bool("FALSE") is True, so a flag cell holding the text
-    FALSE rather than a checkbox counts as enabled - as it did in Apps Script.
-    """
-    return bool(value)
-
-
 def read_jobs(
     client: SheetsClient,
     settings_spreadsheet_id: str,
@@ -105,8 +90,8 @@ def read_jobs(
         name = row[COL_NAME] if COL_NAME < len(row) else ""
         if str(name).strip() == "":
             continue
-        flag = row[index] if index < len(row) else ""
-        if not is_checked(flag):
+        # The flag column holds a checkbox, so UNFORMATTED_VALUE gives a bool.
+        if index >= len(row) or not row[index]:
             continue
         job = SyncJob.from_row(row)
         missing = [

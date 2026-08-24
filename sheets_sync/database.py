@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from .a1 import GridRange, index_to_column, parse_a1, sheet_gid_from_url, spreadsheet_id_from_url, split_sheet_title, with_sheet_title
 from .client import SheetsClient
 from .errors import PermanentError
-from .settings import COL_NAME, SyncJob, is_checked
+from .settings import COL_NAME, SyncJob
 
 log = logging.getLogger(__name__)
 
@@ -413,7 +413,7 @@ def read_database_settings(
     for offset, row in enumerate(rows):
         if str(_cell(row, COL_NAME)).strip() == "":
             continue
-        if not is_checked(_cell(row, index)):
+        if not _cell(row, index):
             continue
         enabled.append((offset + 2, row))
 
@@ -426,7 +426,7 @@ def read_database_settings(
 
     for line, row in enabled:
         name = str(_cell(row, COL_NAME)).strip()
-        if is_checked(_cell(row, config.is_database_column)):
+        if _cell(row, config.is_database_column):
             declared = _cell(row, config.declared_length_column, None)
             declared_int = int(js_parse_float(declared)) if declared not in ("", None) else None
             if declared_int is not None and not math.isnan(js_parse_float(declared)):
