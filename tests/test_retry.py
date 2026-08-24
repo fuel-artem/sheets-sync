@@ -81,4 +81,35 @@ c=Client({"B"},"transient")
 rep=run(c,"SSID","import",jobs=jobs,attempt=4,max_attempts=4,retry_window=0,sleep=lambda s: None)
 print("last attempt -> retry_request:", rep.retry_request)
 print("J2:", c.status["J2"][:120])
+
+print()
+print("== mixed: one row permanently broken, one deferred ==")
+def mixed_run_job(client, job):
+    if job.name=="A": raise http(403, reason="permissionDenied")
+    if job.name=="B": raise http(503, canonical="UNAVAILABLE")
+    return S.JobResult(job.name,"ok",10,5)
+S.run_job=mixed_run_job
+c=Client(set(),"transient")
+rep=run(c,"SSID","import",jobs=jobs,user="me@x.com",attempt=1,retry_window=0,
+        sleep=lambda s: None, timezone_name="Europe/Kyiv")
+print([ (r.name,r.status) for r in rep.results ])
+print("retry scheduled:", rep.retry_request is not None)
+msg=c.status["J2"]
+assert "permissiondenied" in msg.lower(), "permanent failure missing from J2"
+assert "Retry 2 of 4" in msg, "deferral note missing from J2"
+print("PASS both reported")
+print("J2:", msg)
+
+print()
+print("== settings tab itself deferred ==")
+S.run_job=orig
+class Boom(Client):
+    def get_values(self, *a, **k): raise http(503, canonical="UNAVAILABLE")
+c=Boom(set(),"transient")
+rep=run(c,"SSID","import",attempt=1,retry_window=0,sleep=lambda s: None,
+        timezone_name="Europe/Kyiv")
+msg=c.status["J2"]
+assert "Waiting on: settings" in msg, "settings deferral not reported: " + repr(msg)
+print("PASS ->", msg[:110])
+
 S.run_job=orig

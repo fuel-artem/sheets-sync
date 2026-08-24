@@ -227,26 +227,39 @@ def _pass(client: SheetsClient, jobs: Dict[int, Any], results: Dict[int, JobResu
 
 
 def _status_message(report: RunReport, retry_at: Optional[datetime], timezone_name: str) -> str:
-    """What lands in J2. An error the user must act on, or a note that we are retrying."""
+    """
+    What lands in J2.
+
+    A run can carry both kinds of failure at once: one row with a bad range,
+    another deferred by an outage. Both are reported, the permanent error
+    first, so a failure a human must fix never hides a retry that is still
+    coming - nor the other way round.
+    """
+    parts: List[str] = []
+
     if report.error:
-        return report.error
-    if not report.deferred:
-        return ""
+        parts.append(report.error)
 
-    names = ", ".join(job.name for job in report.deferred) or "settings"
-    if report.retry_request and retry_at is not None:
-        from zoneinfo import ZoneInfo
+    # reread_settings means the tab itself failed transiently, so there are no
+    # deferred rows to name even though a retry is scheduled.
+    if report.deferred or report.reread_settings:
+        names = ", ".join(job.name for job in report.deferred) or "settings"
+        if report.retry_request and retry_at is not None:
+            from zoneinfo import ZoneInfo
 
-        when = retry_at.astimezone(ZoneInfo(timezone_name)).strftime("%m/%d/%Y %H:%M:%S")
-        return (
-            f"Google Sheets temporarily unavailable. Retry {report.retry_request['attempt']}"
-            f" of {report.retry_request['max_attempts']} scheduled for {when}."
-            f" Waiting on: {names}. Last error - {report.transient_detail}"
-        )
-    return (
-        f"Gave up after {report.attempt} attempts while Google Sheets was unavailable."
-        f" Not synced: {names}. Last error - {report.transient_detail}"
-    )
+            when = retry_at.astimezone(ZoneInfo(timezone_name)).strftime("%m/%d/%Y %H:%M:%S")
+            parts.append(
+                f"Google Sheets temporarily unavailable. Retry {report.retry_request['attempt']}"
+                f" of {report.retry_request['max_attempts']} scheduled for {when}."
+                f" Waiting on: {names}. Last error - {report.transient_detail}"
+            )
+        else:
+            parts.append(
+                f"Gave up after {report.attempt} attempts while Google Sheets was unavailable."
+                f" Not synced: {names}. Last error - {report.transient_detail}"
+            )
+
+    return " | ".join(parts)
 
 
 def run(
