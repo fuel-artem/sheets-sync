@@ -22,7 +22,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone as dt_timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from .a1 import (
     GridRange,
@@ -275,6 +275,7 @@ def run(
     run_url: str = "",
     run_url_cell: Optional[str] = None,
     update_status: bool = True,
+    status_cells: Optional[Sequence[str]] = None,
     attempt: int = 1,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     retry_window: float = DEFAULT_RETRY_WINDOW,
@@ -382,6 +383,10 @@ def run(
                 timezone=timezone_name,
                 run_url_cell=run_url_cell,
                 run_url=run_url,
+                # Explicit flag wins; otherwise the database variant takes its
+                # cells from the config that arrived in the dispatch payload.
+                status_cells=status_cells
+                or (database_config.status_cells if (mode == "database" and database_config) else None),
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("Could not write the status block: %s", classify(exc))

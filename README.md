@@ -50,6 +50,13 @@ URLs must contain both the spreadsheet id and `#gid=`, exactly as before. Ranges
 Status block per tab: **J2** error, **J3** timestamp, **J4** user — except the database
 variant, which uses **L2/L3/L4**, matching its Apps Script.
 
+The database variant's cells are `status_cells` in `DatabaseConfig`, so they travel in the
+dispatch payload with the rest of the layout; `DATABASE_CONFIG.status_cells` in the Apps
+Script is the single place that sets them, and `--status-cells J2,J3,J4` overrides them for
+any mode. Worth knowing that a database run and a plain import share the *same tab* and
+write to *different columns*, so checking J2 after a database run shows the previous
+import's status, not this run's.
+
 ## Setup
 
 **1. Service account**

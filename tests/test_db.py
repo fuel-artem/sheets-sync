@@ -87,3 +87,33 @@ BAD=[["Bank",SRC,"A2:Z","","","Bank",True,False,True,25]]
 c2=Client(); c2.get_values=lambda ss,a1,value_render_option="UNFORMATTED_VALUE": BAD if "Import Settings" in a1 else []
 try: read_database_settings(c2,"SS","manual",cfg)
 except Exception as e: print(type(e).__name__, "->", e)
+
+print()
+print("== status cells travel in the config ==")
+from sheets_sync.settings import STATUS_CELLS
+import sheets_sync.sync as _S
+cfg_j = DatabaseConfig.from_dict({"database_tab":"General database","status_cells":["J2","J3","J4"]})
+assert cfg_j.status_cells == ("J2","J3","J4")
+assert DatabaseConfig().status_cells == ("L2","L3","L4"), "default must stay L"
+assert STATUS_CELLS["database"] == ("L2","L3","L4"), "per-mode default unchanged"
+
+class StatusClient:
+    policy=None
+    def __init__(self): self.cells={}
+    def sheet_props(self, ss, gid=None, title=None):
+        raise ValueError("Tab %r not found in spreadsheet SSID" % title)
+    def batch_set_values(self, ss, data):
+        for d in data: self.cells[d["range"]]=d["values"][0][0]
+
+for cfg, expect in ((DatabaseConfig(), "L2"), (cfg_j, "J2")):
+    job=DatabaseJob(settings_spreadsheet_id="SSID",
+                    sources=[DatabaseSource("Bank","Bank","https://x/d/SRC/edit#gid=0","A2:U",21)],
+                    replaced_labels=["Bank"], config=cfg)
+    c=StatusClient()
+    rep=_S.run(c,"SSID","database",jobs=[job],user="me@x.com",database_config=cfg,
+               attempt=1,retry_window=0,sleep=lambda s: None)
+    key="'Import Settings'!"+expect
+    assert key in c.cells, "expected the error in %s, got %s" % (expect, list(c.cells))
+    assert "not found" in c.cells[key]
+    print("  %s -> %s" % (expect, c.cells[key][:58]))
+print("PASS status cells honoured")

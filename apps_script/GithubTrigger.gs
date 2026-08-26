@@ -40,7 +40,11 @@ const DATABASE_CONFIG = {
   trailing_new: 3,
   database_tab: 'General database',
   ai_tab: 'AI Settings',
-  ai_ranges: { cf: 'A3:G', pl: 'I3:O', bs: 'Q3:W' }
+  ai_ranges: { cf: 'A3:G', pl: 'I3:O', bs: 'Q3:W' },
+  // Where this spreadsheet keeps the database status block: error, timestamp,
+  // user. Both this script and the Python side read it from here, so there is
+  // one place to change if it ever moves.
+  status_cells: ['L2', 'L3', 'L4']
 };
 
 function onOpen() {
@@ -168,13 +172,16 @@ function dispatchWorkflow_(mode, execution, silent) {
  */
 function setQueuedStatus_(mode, error, user, queued) {
   const tab = mode === 'export' ? 'Export Settings' : 'Import Settings';
-  // The database variant keeps its status block in column L.
-  const column = mode === 'database' ? 'L' : 'J';
+  // The database variant keeps its own block; DATABASE_CONFIG is the one place
+  // that says where, and the same value is sent to Python in the payload.
+  const cells = mode === 'database'
+    ? DATABASE_CONFIG.status_cells
+    : ['J2', 'J3', 'J4'];
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(tab);
   if (!sheet) return;
-  sheet.getRange(column + '2').setValue(error || '');
-  sheet.getRange(column + '3').setValue(queued ? 'queued ' + new Date().toISOString() : '');
-  sheet.getRange(column + '4').setValue(user || '');
+  sheet.getRange(cells[0]).setValue(error || '');
+  sheet.getRange(cells[1]).setValue(queued ? 'queued ' + new Date().toISOString() : '');
+  sheet.getRange(cells[2]).setValue(user || '');
 }
 
 /**

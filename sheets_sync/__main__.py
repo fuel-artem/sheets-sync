@@ -145,7 +145,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Where to write the retry request when rows are deferred",
     )
 
-    p.add_argument("--no-status", action="store_true", help="Do not write J2:J4")
+    p.add_argument(
+        "--status-cells",
+        default="",
+        help="Override the status block cells, e.g. J2,J3,J4 (error, timestamp, user)",
+    )
+    p.add_argument("--no-status", action="store_true", help="Do not write the status block")
     p.add_argument("--dry-run", action="store_true", help="List the rows that would run")
     p.add_argument("--verbose", "-v", action="store_true")
     return p
@@ -199,6 +204,16 @@ def main(argv: Optional[List[str]] = None) -> int:
             file=sys.stderr,
         )
         return EXIT_BAD_USAGE
+
+    status_cells = None
+    if args.status_cells:
+        status_cells = [c.strip() for c in args.status_cells.split(",") if c.strip()]
+        if len(status_cells) != 3:
+            print(
+                "--status-cells needs exactly 3 cells: error,timestamp,user",
+                file=sys.stderr,
+            )
+            return EXIT_BAD_USAGE
 
     policy = RetryPolicy(attempts=args.call_attempts)
 
@@ -255,6 +270,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         attempt=args.attempt,
         max_attempts=args.max_attempts,
         retry_window=args.retry_window_minutes * 60,
+        status_cells=status_cells,
     )
 
     for result in report.results:

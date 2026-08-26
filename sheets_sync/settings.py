@@ -119,10 +119,16 @@ def write_status(
     timezone: str = "UTC",
     run_url_cell: Optional[str] = None,
     run_url: str = "",
+    status_cells: Optional[Sequence[str]] = None,
 ) -> None:
-    """Write the J2/J3/J4 status block, same as statusImportUpdate/statusExportUpdate."""
+    """Write the status block, same as statusImportUpdate/statusExportUpdate.
+
+    ``status_cells`` overrides the per-mode default, so a spreadsheet whose
+    block does not sit where the original script put it can be corrected from
+    the dispatch payload rather than from here.
+    """
     tab = TAB[mode]
-    error_cell, date_cell, user_cell = STATUS_CELLS[mode]
+    error_cell, date_cell, user_cell = tuple(status_cells or STATUS_CELLS[mode])
     formatted = ""
     if when is not None:
         formatted = when.astimezone(ZoneInfo(timezone)).strftime("%m/%d/%Y %H:%M:%S")
