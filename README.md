@@ -82,7 +82,9 @@ not start new workflow runs. The same fine-grained PAT the sheet uses works here
 
 **3. The button**
 
-Replace the old `Import.gs` / `Export.gs` with `apps_script/GithubTrigger.gs`. Keep the
+Replace the old `Import.gs` / `Export.gs` with `apps_script/GithubTrigger.gs`. Set
+`SUPPORT_CONTACT` at the top of the file: it is named in every alert a button can raise,
+since the people clicking those buttons cannot open a private repository. Keep the
 existing drawings — the entry points are still called `manualImport` / `manualExport`.
 Then set `GITHUB_TOKEN` in Script Properties: a fine-grained PAT scoped to this repo with
 **Actions: read and write**. Adjust `GITHUB_OWNER`, `GITHUB_REPO`, `GIT_REF` at the top of

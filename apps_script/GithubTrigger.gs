@@ -20,6 +20,10 @@ const GITHUB_REPO = 'sheets-sync';
 const WORKFLOW_FILE = 'sheets-sync.yml';
 const GIT_REF = 'main';
 
+// Shown in the alerts people see when a sync cannot start. Nobody reading
+// them can open the repository, so the message has to name a human.
+const SUPPORT_CONTACT = 'artemomelchenko@fuelfinance.me';
+
 // Pinned REST API version. GitHub currently supports '2026-03-10' and the older
 // '2022-11-28'. Only the dispatch POST is called and it answers 204 with no body,
 // so there is no response shape a version bump could break.
@@ -53,8 +57,6 @@ function onOpen() {
     .addItem('Run Import', 'manualImport')
     .addItem('Run Export', 'manualExport')
     .addItem('Run Database Import', 'manualDatabaseImport')
-    .addSeparator()
-    .addItem('Open Actions log', 'openActionsLog')
     .addToUi();
 }
 
@@ -93,6 +95,54 @@ function triggerExport() {
   dispatchWorkflow_('export', 'trigger', true);
 }
 
+/** 'database' -> 'Database import', for messages people read. */
+function modeLabel_(mode) {
+  if (mode === 'export') return 'Export';
+  if (mode === 'database') return 'Database import';
+  return 'Import';
+}
+
+/**
+ * Turn an HTTP failure into something a non-technical reader can act on.
+ * The technical detail goes to the execution log, not to the screen.
+ */
+function friendlyError_(mode, code) {
+  const what = modeLabel_(mode).toLowerCase();
+  if (code === 401 || code === 403) {
+    return 'The ' + what + ' could not start because this spreadsheet no longer has'
+      + ' permission to run it. The access key has most likely expired.'
+      + ' Please contact ' + SUPPORT_CONTACT + '.';
+  }
+  if (code === 404) {
+    return 'The ' + what + ' could not start because the automation was not found.'
+      + ' It may have been moved or renamed. Please contact ' + SUPPORT_CONTACT + '.';
+  }
+  if (code === 422) {
+    return 'The ' + what + ' could not start because of a setup problem in the'
+      + ' automation. Nothing was changed. Please contact ' + SUPPORT_CONTACT + '.';
+  }
+  if (code === 429) {
+    return 'The ' + what + ' was asked for too many times in a row.'
+      + ' Please wait a minute and try again.';
+  }
+  if (code >= 500) {
+    return 'The service that runs the ' + what + ' is temporarily unavailable.'
+      + ' Please try again in a few minutes.';
+  }
+  return 'The ' + what + ' could not start (error ' + code + ').'
+    + ' Nothing was changed. Please contact ' + SUPPORT_CONTACT + '.';
+}
+
+/** Alerts are best-effort: a missing UI context must not hide the real error. */
+function showAlert_(message) {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert('Fuel Sync', message, ui.ButtonSet.OK);
+  } catch (e) {
+    console.warn('could not show alert: ' + e);
+  }
+}
+
 /**
  * Send a workflow_dispatch request to GitHub.
  *
@@ -106,9 +156,11 @@ function dispatchWorkflow_(mode, execution, silent) {
   const token = PropertiesService.getScriptProperties().getProperty('GITHUB_TOKEN');
 
   if (!token) {
-    const msg = 'GITHUB_TOKEN is not set in Script Properties.';
-    if (!silent) SpreadsheetApp.getUi().alert(msg);
-    throw new Error(msg);
+    const friendly = modeLabel_(mode) + ' is not set up on this spreadsheet yet,'
+      + ' so nothing was run. Please contact ' + SUPPORT_CONTACT + '.';
+    setQueuedStatus_(mode, friendly, Session.getActiveUser().getEmail());
+    if (!silent) showAlert_(friendly);
+    throw new Error('GITHUB_TOKEN is not set in Script Properties');
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -154,15 +206,23 @@ function dispatchWorkflow_(mode, execution, silent) {
 
   const code = response.getResponseCode();
   if (code !== 204) {
-    const message = 'GitHub returned ' + code + ': ' + response.getContentText();
-    setQueuedStatus_(mode, message, email);
-    if (!silent) SpreadsheetApp.getUi().alert(message);
-    throw new Error(message);
+    const friendly = friendlyError_(mode, code);
+    // The reader sees the plain sentence; the detail stays in the execution log.
+    console.error('dispatch failed: HTTP ' + code + ': ' + response.getContentText());
+    setQueuedStatus_(mode, friendly, email);
+    if (!silent) showAlert_(friendly);
+    throw new Error('dispatch failed with HTTP ' + code);
   }
 
   setQueuedStatus_(mode, '', email, true);
   if (!silent) {
-    ss.toast(mode + ' queued on GitHub Actions', 'Fuel Sync', 5);
+    const cell = mode === 'database' ? DATABASE_CONFIG.status_cells[0] : 'J2';
+    ss.toast(
+      modeLabel_(mode) + ' started. The result will appear in cell ' + cell
+        + ' in a few minutes - this sheet does not update instantly.',
+      'Fuel Sync',
+      8
+    );
   }
 }
 
@@ -214,15 +274,4 @@ function collectJobs_(mode, execution) {
       to_range: String(r[4])
     };
   });
-}
-
-function openActionsLog() {
-  const owner = GITHUB_OWNER;
-  const repo = GITHUB_REPO;
-  const url =
-    'https://github.com/' + owner + '/' + repo + '/actions/workflows/' + WORKFLOW_FILE;
-  const html = HtmlService.createHtmlOutput(
-    '<a href="' + url + '" target="_blank">Open the sheets-sync runs</a>'
-  ).setWidth(320).setHeight(60);
-  SpreadsheetApp.getUi().showModalDialog(html, 'GitHub Actions');
 }
