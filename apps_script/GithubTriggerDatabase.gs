@@ -1,25 +1,13 @@
 /**
- * Fuel Sync - import and export, for a spreadsheet with a database tab.
+ * Fuel Sync for a spreadsheet with a database tab. Same as GithubTrigger.gs,
+ * except "Import" is the database rebuild - there is no plain-copy import here,
+ * since the non-database settings rows are copied by the same run.
  *
- * Same as GithubTrigger.gs with one difference: here "Import" means the
- * database rebuild. It reads every enabled source off the Import Settings tab,
- * enriches each transaction from the AI Settings handbook, and rewrites the
- * database tab. There is no plain-copy import on this spreadsheet - the
- * non-database rows of the settings tab are copied as part of the same run.
+ * Never in the same project as GithubTrigger.gs: they declare the same names.
  *
- * Use this file or GithubTrigger.gs - never both in the same Apps Script
- * project, because they declare the same names.
- *
- * The button no longer moves any data: it asks GitHub Actions to run
- * `sheets-sync.yml`. Everything that says *where* to dispatch is a constant
- * below. The only thing left in Project Settings -> Script Properties is the
- * credential:
- *   GITHUB_TOKEN  fine-grained PAT with "Actions: read and write" on the repo
- *
- * It stays a property rather than a constant because Apps Script source is
- * readable by every editor of this spreadsheet, travels with File > Make a copy,
- * and is retained in the project's version history. A Script Property is none of
- * those things. Inline it only if you accept that.
+ * Script Properties: GITHUB_TOKEN, a fine-grained PAT with Actions: read and
+ * write. It stays a property because this source is readable by every editor of
+ * the spreadsheet and follows File > Make a copy.
  */
 
 const GITHUB_OWNER = 'fuel-artem';
@@ -27,32 +15,23 @@ const GITHUB_REPO = 'sheets-sync';
 const WORKFLOW_FILE = 'sheets-sync.yml';
 const GIT_REF = 'main';
 
-// Shown in the alerts people see when a sync cannot start. Nobody reading
-// them can open the repository, so the message has to name a human.
+// Named in every alert: nobody who sees one can open the repository.
 const SUPPORT_CONTACT = 'artemomelchenko@fuelfinance.me';
 
-// The same words sheets_sync.sync writes, so the cell reads the same way
-// whichever half of the system touched it last.
+// Must match the words sheets_sync.sync writes to the same cell.
 const STATUS_FAILED = 'Failed';
 const STATUS_RUNNING = 'In progress';
 
-// Pinned REST API version. The two supported versions do not answer the dispatch
-// the same way: '2026-03-10' returns 200 with a body carrying workflow_run_id,
-// where '2022-11-28' returned 204 with no body. Any 2xx counts as success below,
-// so neither version is a trap.
+// 2026-03-10 answers the dispatch 200 with a body; 2022-11-28 answered 204 with
+// none. Hence the 2xx check below rather than a literal status.
 const GITHUB_API_VERSION = '2026-03-10';
 
-// true  -> the enabled rows are read here and sent in the payload
-// false -> only the spreadsheet id is sent and Python reads the tabs itself
-//
-// The rebuild is always assembled on the Python side, since it needs the AI
-// Settings handbook as well as the settings rows, so this only affects export.
+// true -> the enabled rows are sent in the payload; false -> Python reads the
+// tabs. Export only: the rebuild is always assembled Python-side.
 const SEND_JOBS_INLINE = false;
 
-// The database layout. This is the per-client part of the old script - the
-// `databaseLength` constant and the column layout around it. It travels with the
-// dispatch, so nothing about this spreadsheet is stored on the GitHub side.
-// Omit a key to keep the documented default.
+// The database layout, sent with the dispatch so GitHub stores nothing about
+// this spreadsheet. Omit a key to keep its default.
 const DATABASE_CONFIG = {
   transaction_length: 21,
   keep_columns: 37,
@@ -61,10 +40,8 @@ const DATABASE_CONFIG = {
   database_tab: 'General database',
   ai_tab: 'AI Settings',
   ai_ranges: { cf: 'A3:G', pl: 'I3:O', bs: 'Q3:W' },
-  // Where this spreadsheet keeps the status block for the rebuild: state,
-  // timestamp, user. Both this script and the Python side read it from here,
-  // so there is one place to change if it ever moves. Note this is a different
-  // column from the export block, on a different tab.
+  // Status block for the rebuild: state, timestamp, user. Sent to Python too,
+  // so this is the only place it is written down.
   status_cells: ['L2', 'L3', 'L4']
 };
 
@@ -79,10 +56,7 @@ function onOpen() {
     .addToUi();
 }
 
-/**
- * Buttons keep their original names, so existing drawings stay wired up.
- * On this spreadsheet the import is the database rebuild.
- */
+/** Original names, so existing drawings stay wired. Import = the rebuild. */
 function manualImport() {
   dispatchWorkflow_('database', 'manual');
 }
@@ -91,11 +65,7 @@ function manualExport() {
   dispatchWorkflow_('export', 'manual');
 }
 
-/**
- * Entry points for the Apps Script time-driven trigger. The schedule stays here
- * rather than in GitHub cron, because a cron run would need a spreadsheet id
- * stored on the GitHub side.
- */
+/** Time-driven trigger entry points. The schedule lives here, not in GitHub cron. */
 function triggerImport() {
   dispatchWorkflow_('database', 'trigger', true);
 }
@@ -104,10 +74,7 @@ function triggerExport() {
   dispatchWorkflow_('export', 'trigger', true);
 }
 
-/**
- * For messages people read. The rebuild is an import as far as anyone reading
- * the sheet is concerned; the cell it lands in is what tells the two apart.
- */
+/** The rebuild reads as "Import"; the cell it lands in tells them apart. */
 function modeLabel_(mode) {
   return mode === 'export' ? 'Export' : 'Import';
 }
@@ -117,10 +84,7 @@ function statusCells_(mode) {
   return mode === 'export' ? EXPORT_STATUS_CELLS : DATABASE_CONFIG.status_cells;
 }
 
-/**
- * Turn an HTTP failure into something a non-technical reader can act on.
- * The technical detail goes to the execution log, not to the screen.
- */
+/** Plain-language text for the reader; the HTTP detail goes to the log. */
 function friendlyError_(mode, code) {
   const what = modeLabel_(mode).toLowerCase();
   if (code === 401 || code === 403) {
@@ -181,8 +145,6 @@ function dispatchWorkflow_(mode, execution, silent) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const email = Session.getActiveUser().getEmail();
 
-  // Everything the run needs travels in this payload. GitHub holds no default
-  // spreadsheet id, so a run that is not started from here has nothing to act on.
   const inputs = {
     mode: mode,
     execution: execution,
@@ -216,24 +178,21 @@ function dispatchWorkflow_(mode, execution, silent) {
   });
 
   const code = response.getResponseCode();
-  // Not `!== 204`: that rejected every successful dispatch under 2026-03-10.
   if (code < 200 || code >= 300) {
     const friendly = friendlyError_(mode, code);
-    // The reader sees the plain sentence; the detail stays in the execution log.
     console.error('dispatch failed: HTTP ' + code + ': ' + response.getContentText());
     setSheetStatus_(mode, STATUS_FAILED + ': ' + friendly, email);
     if (!silent) showAlert_(friendly);
     throw new Error('dispatch failed with HTTP ' + code);
   }
 
-  // 2026-03-10 names the run it created; worth having in the log when tracing one.
   try {
     const created = JSON.parse(response.getContentText() || '{}');
     if (created.workflow_run_id) {
       console.info('dispatched run ' + created.workflow_run_id);
     }
   } catch (e) {
-    // 2022-11-28 answers with no body. Nothing to log, nothing wrong.
+    // 2022-11-28 sends no body.
   }
 
   setSheetStatus_(
@@ -252,10 +211,7 @@ function dispatchWorkflow_(mode, execution, silent) {
   }
 }
 
-/**
- * Write the status block: the state anyone reading the sheet needs, the time,
- * and who asked for it. The workflow overwrites all three when it finishes.
- */
+/** State, time, and who asked. The workflow overwrites all three when it finishes. */
 function setSheetStatus_(mode, text, user) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const tab = mode === 'export' ? 'Export Settings' : 'Import Settings';
@@ -263,7 +219,6 @@ function setSheetStatus_(mode, text, user) {
   const sheet = ss.getSheetByName(tab);
   if (!sheet) return;
   sheet.getRange(cells[0]).setValue(text);
-  // Always stamped, so a failure never sits under a stale time.
   sheet.getRange(cells[1]).setValue(
     Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'MM/dd/yyyy HH:mm:ss')
   );
@@ -271,9 +226,8 @@ function setSheetStatus_(mode, text, user) {
 }
 
 /**
- * Read the enabled export rows, used only when SEND_JOBS_INLINE is true. The
- * rebuild never comes through here, so only the export flag columns matter.
- * Column layout: A name | B from URL | C from range | D to URL | E to range | F..G flags
+ * Enabled export rows, only when SEND_JOBS_INLINE is true.
+ * A name | B from URL | C from range | D to URL | E to range | F..G flags
  */
 function collectJobs_(mode, execution) {
   const flagIndex = execution === 'trigger' ? 5 : 6;

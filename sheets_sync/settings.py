@@ -40,7 +40,7 @@ FLAG_COLUMN = {
 }
 
 # Status block: error, timestamp, user. The database variant keeps it in L.
-# Shared with the Apps Script, which formats its own timestamp the same way.
+# The Apps Script formats its own timestamp to match.
 TIME_FORMAT = "%m/%d/%Y %H:%M:%S"
 
 STATUS_CELLS = {
@@ -126,9 +126,8 @@ def write_status(
 ) -> None:
     """Write the status block, same as statusImportUpdate/statusExportUpdate.
 
-    ``status_cells`` overrides the per-mode default, so a spreadsheet whose
-    block does not sit where the original script put it can be corrected from
-    the dispatch payload rather than from here.
+    ``status_cells`` overrides the per-mode default; the database variant sends
+    its own in the dispatch payload.
     """
     tab = TAB[mode]
     status_cell, date_cell, user_cell = tuple(status_cells or STATUS_CELLS[mode])

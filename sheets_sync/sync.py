@@ -226,26 +226,13 @@ def _pass(client: SheetsClient, jobs: Dict[int, Any], results: Dict[int, JobResu
     return still_pending, last_transient
 
 
-# What a finished run reports. "In progress" belongs to the Apps Script, which
-# writes it when it dispatches; by the time this module writes the cell the run
-# is over.
+# Must match STATUS_FAILED and modeLabel_ in the Apps Script, which writes the
+# same cell. "In progress" is only ever written there.
 STATUS_FAILED = "Failed"
-
-# The database rebuild is an import as far as anyone reading the sheet is
-# concerned - it runs off the Import Settings tab - so it reports as one. The
-# cell it lands in is what tells the two apart.
 MODE_LABEL = {"import": "Import", "export": "Export", "database": "Import"}
 
 def _status_message(report: RunReport, retry_at: Optional[datetime], timezone_name: str) -> str:
-    """
-    What lands in the status cell.
-
-    A clean run says only that it worked - no counts, since one "row" means a
-    settings row for a copy but the whole rebuilt tab for the database import,
-    and a number that changes meaning by mode is worse than no number. Anything
-    that did not finish leads with Failed and carries the technical detail. A
-    deferred row is a failure with a retry attached, not a third state.
-    """
+    """What lands in the status cell. Detail only when something went wrong."""
     names = ", ".join(job.name for job in report.deferred) or "settings"
     retry_pending = bool(report.retry_request and retry_at is not None)
     gave_up = bool((report.deferred or report.reread_settings) and not retry_pending)

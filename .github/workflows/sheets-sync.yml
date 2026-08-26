@@ -1,9 +1,7 @@
 name: sheets-sync
 
-# Every parameter arrives with the dispatch that started the run - from the sheet
-# button, or from this workflow re-dispatching itself for a retry. There is no
-# repository variable holding a spreadsheet id, and no cron: a run with no caller
-# is a run against nothing.
+# Every parameter arrives with the dispatch. No repository variable holds a
+# spreadsheet id, and there is no cron: a run with no caller has nothing to act on.
 on:
   workflow_dispatch:
     inputs:
@@ -71,8 +69,7 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      # A scheduled retry starts immediately and waits here. The cap keeps a
-      # stuck run from holding a runner for hours.
+      # A retry run starts at once and waits here. The cap bounds runner time.
       - name: Wait for the scheduled retry time
         if: inputs.not_before != ''
         env:
@@ -91,12 +88,8 @@ jobs:
 
       - name: Run ${{ inputs.mode }} (attempt ${{ inputs.attempt }})
         id: sync
-        # Inputs travel as env vars and are never interpolated into the script
-        # body. jobs_json and database_config are JSON: substituted textually,
-        # their double quotes close the shell quoting, so Python received
-        # {name:Payroll} instead of {"name":"Payroll"} and exited 2 on
-        # JSONDecodeError - before the status block or the retry output were
-        # written. That broke every database run and every retry carrying rows.
+        # Inputs go through env, never ${{ }} in the script body: two of them
+        # are JSON and their quotes would close the shell's.
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SA_KEY }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -123,10 +116,8 @@ jobs:
             --attempt "$SS_ATTEMPT" \
             --retry-file retry.json
 
-      # Google was down or throttling and rows are still pending: dispatch a new
-      # run carrying the same parameters plus the rows that failed.
-      # This needs a PAT - events created with the built-in GITHUB_TOKEN do not
-      # start new workflow runs.
+      # Needs a PAT: events created with the built-in GITHUB_TOKEN do not start
+      # new workflow runs.
       - name: Schedule the retry
         if: always() && steps.sync.outputs.retry == 'true'
         env:

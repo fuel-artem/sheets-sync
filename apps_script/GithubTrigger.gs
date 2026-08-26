@@ -1,22 +1,13 @@
 /**
- * Fuel Sync - import and export.
+ * Fuel Sync - import and export. The button dispatches `sheets-sync.yml`, which
+ * reads the Settings tabs and writes the status block back.
  *
- * The button no longer moves any data: it asks GitHub Actions to run
- * `sheets-sync.yml`, which reads the same Import/Export Settings tabs and
- * writes the status block back into J2:J4.
+ * For a spreadsheet with a database tab use GithubTriggerDatabase.gs instead.
+ * Never both in one project: they declare the same names.
  *
- * This is the copy for a spreadsheet that has no database tab. The variant for
- * one that does is GithubTriggerDatabase.gs. Use one or the other - never both
- * in the same Apps Script project, because they declare the same names.
- *
- * Everything that says *where* to dispatch is a constant below. The only thing
- * left in Project Settings -> Script Properties is the credential:
- *   GITHUB_TOKEN  fine-grained PAT with "Actions: read and write" on the repo
- *
- * It stays a property rather than a constant because Apps Script source is
- * readable by every editor of this spreadsheet, travels with File > Make a copy,
- * and is retained in the project's version history. A Script Property is none of
- * those things. Inline it only if you accept that.
+ * Script Properties: GITHUB_TOKEN, a fine-grained PAT with Actions: read and
+ * write. It stays a property because this source is readable by every editor of
+ * the spreadsheet and follows File > Make a copy.
  */
 
 const GITHUB_OWNER = 'fuel-artem';
@@ -24,22 +15,18 @@ const GITHUB_REPO = 'sheets-sync';
 const WORKFLOW_FILE = 'sheets-sync.yml';
 const GIT_REF = 'main';
 
-// Shown in the alerts people see when a sync cannot start. Nobody reading
-// them can open the repository, so the message has to name a human.
+// Named in every alert: nobody who sees one can open the repository.
 const SUPPORT_CONTACT = 'artemomelchenko@fuelfinance.me';
 
-// The same words sheets_sync.sync writes, so the cell reads the same way
-// whichever half of the system touched it last.
+// Must match the words sheets_sync.sync writes to the same cell.
 const STATUS_FAILED = 'Failed';
 const STATUS_RUNNING = 'In progress';
 
 // Both tabs keep their status block in column J: state, timestamp, user.
 const STATUS_CELLS = ['J2', 'J3', 'J4'];
 
-// Pinned REST API version. The two supported versions do not answer the dispatch
-// the same way: '2026-03-10' returns 200 with a body carrying workflow_run_id,
-// where '2022-11-28' returned 204 with no body. Any 2xx counts as success below,
-// so neither version is a trap.
+// 2026-03-10 answers the dispatch 200 with a body; 2022-11-28 answered 204 with
+// none. Hence the 2xx check below rather than a literal status.
 const GITHUB_API_VERSION = '2026-03-10';
 
 // true  -> the enabled rows are read here and sent in the payload
@@ -63,11 +50,7 @@ function manualExport() {
   dispatchWorkflow_('export', 'manual');
 }
 
-/**
- * Entry points for the Apps Script time-driven trigger. The schedule stays here
- * rather than in GitHub cron, because a cron run would need a spreadsheet id
- * stored on the GitHub side.
- */
+/** Time-driven trigger entry points. The schedule lives here, not in GitHub cron. */
 function triggerImport() {
   dispatchWorkflow_('import', 'trigger', true);
 }
@@ -81,10 +64,7 @@ function modeLabel_(mode) {
   return mode === 'export' ? 'Export' : 'Import';
 }
 
-/**
- * Turn an HTTP failure into something a non-technical reader can act on.
- * The technical detail goes to the execution log, not to the screen.
- */
+/** Plain-language text for the reader; the HTTP detail goes to the log. */
 function friendlyError_(mode, code) {
   const what = modeLabel_(mode).toLowerCase();
   if (code === 401 || code === 403) {
@@ -145,8 +125,6 @@ function dispatchWorkflow_(mode, execution, silent) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const email = Session.getActiveUser().getEmail();
 
-  // Everything the run needs travels in this payload. GitHub holds no default
-  // spreadsheet id, so a run that is not started from here has nothing to act on.
   const inputs = {
     mode: mode,
     execution: execution,
@@ -178,24 +156,21 @@ function dispatchWorkflow_(mode, execution, silent) {
   });
 
   const code = response.getResponseCode();
-  // Not `!== 204`: that rejected every successful dispatch under 2026-03-10.
   if (code < 200 || code >= 300) {
     const friendly = friendlyError_(mode, code);
-    // The reader sees the plain sentence; the detail stays in the execution log.
     console.error('dispatch failed: HTTP ' + code + ': ' + response.getContentText());
     setSheetStatus_(mode, STATUS_FAILED + ': ' + friendly, email);
     if (!silent) showAlert_(friendly);
     throw new Error('dispatch failed with HTTP ' + code);
   }
 
-  // 2026-03-10 names the run it created; worth having in the log when tracing one.
   try {
     const created = JSON.parse(response.getContentText() || '{}');
     if (created.workflow_run_id) {
       console.info('dispatched run ' + created.workflow_run_id);
     }
   } catch (e) {
-    // 2022-11-28 answers with no body. Nothing to log, nothing wrong.
+    // 2022-11-28 sends no body.
   }
 
   setSheetStatus_(
@@ -214,17 +189,13 @@ function dispatchWorkflow_(mode, execution, silent) {
   }
 }
 
-/**
- * Write the status block: the state anyone reading the sheet needs, the time,
- * and who asked for it. The workflow overwrites all three when it finishes.
- */
+/** State, time, and who asked. The workflow overwrites all three when it finishes. */
 function setSheetStatus_(mode, text, user) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const tab = mode === 'export' ? 'Export Settings' : 'Import Settings';
   const sheet = ss.getSheetByName(tab);
   if (!sheet) return;
   sheet.getRange(STATUS_CELLS[0]).setValue(text);
-  // Always stamped, so a failure never sits under a stale time.
   sheet.getRange(STATUS_CELLS[1]).setValue(
     Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'MM/dd/yyyy HH:mm:ss')
   );

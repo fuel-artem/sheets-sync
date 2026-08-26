@@ -71,9 +71,8 @@ class DatabaseConfig:
     source_label_column: int = 5
     is_database_column: int = 6
     declared_length_column: int = 9
-    # Where this spreadsheet keeps its status block. Part of the config, so it
-    # travels in the dispatch payload like everything else spreadsheet-specific;
-    # the plain import/export default lives in settings.STATUS_CELLS.
+    # Travels in the dispatch payload; settings.STATUS_CELLS holds the
+    # import/export default.
     status_cells: Tuple[str, str, str] = ("L2", "L3", "L4")
     # Restore the basic filter over the tab afterwards, as the original did.
     restore_filter: bool = True
