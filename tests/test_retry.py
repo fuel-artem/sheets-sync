@@ -160,3 +160,56 @@ assert msg.startswith("Failed:"), msg
 print("PASS ->", msg[:110])
 
 S.run_job=orig
+
+print()
+print("== a transient failure defers the rest of the run ==")
+chain=[SyncJob(n,"u","A1","u","A1") for n in ("Rebuild","CopyA","CopyB","CopyC")]
+class Trace(Client):
+    def __init__(self,*a):
+        Client.__init__(self,set(),"transient"); self.ran=[]
+
+def make_(fail_on, kind):
+    def f(client, job):
+        client.ran.append(job.name)
+        if job.name==fail_on:
+            raise http(503, canonical="UNAVAILABLE") if kind=="transient" else http(403, reason="permissionDenied")
+        return S.JobResult(job.name,"ok",10,5)
+    return f
+
+S.run_job=make_("CopyA","transient")
+c=Trace()
+rep=run(c,"SSID","import",jobs=chain,user="me@x.com",attempt=1,retry_window=0,
+        sleep=lambda s: None, timezone_name="Europe/Kyiv")
+assert c.ran==["Rebuild","CopyA"], c.ran  # CopyB/CopyC never ran on stale input
+assert [r.status for r in rep.results]==["ok","deferred","deferred","deferred"], rep.results
+carried=[j["name"] for j in json.loads(rep.retry_request["inputs"]["jobs_json"])]
+assert carried==["CopyA","CopyB","CopyC"], carried  # and Rebuild is not redone
+print("  ran:", c.ran, "-> retry carries:", carried)
+
+print("a permanent failure does not block the rest")
+S.run_job=make_("CopyA","permanent")
+c=Trace()
+rep=run(c,"SSID","import",jobs=chain,user="me@x.com",attempt=1,retry_window=0,
+        sleep=lambda s: None, timezone_name="Europe/Kyiv")
+assert c.ran==["Rebuild","CopyA","CopyB","CopyC"], c.ran
+assert [r.status for r in rep.results]==["ok","failed","ok","ok"], rep.results
+assert rep.retry_request is None
+print("  ran:", c.ran)
+
+print("blocked rows run once the blocker clears, in the same run")
+tries={"n":0}
+def flaky_(client, job):
+    client.ran.append(job.name)
+    if job.name=="CopyA":
+        tries["n"]+=1
+        if tries["n"]==1: raise http(503, canonical="UNAVAILABLE")
+    return S.JobResult(job.name,"ok",10,5)
+S.run_job=flaky_
+c=Trace()
+rep=run(c,"SSID","import",jobs=chain[:3],user="me@x.com",attempt=1,retry_window=600,
+        sleep=lambda s: None, timezone_name="Europe/Kyiv")
+assert c.ran==["Rebuild","CopyA","CopyA","CopyB"], c.ran  # Rebuild not re-run
+assert rep.retry_request is None and c.status["J2"]=="Import successful", c.status["J2"]
+print("  ran:", c.ran, "->", c.status["J2"])
+print("PASS ordering")
+S.run_job=orig

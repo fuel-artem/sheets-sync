@@ -198,9 +198,15 @@ Three layers of retry, each only for transient failures:
 1. **Per API call** — 5 attempts, 1s → 32s with jitter, capped by a 90s per-call budget. If the
    server asks for a longer `Retry-After` than the budget allows, the call gives up early and
    lets layer 2 handle it rather than sitting in a loop.
-2. **Per row, inside the run** — a row that still fails is *deferred*, not fatal. The run
-   re-attempts the deferred rows after 30s, 2m, 5m, 10m, until `--retry-window-minutes`
-   (default 10) is spent. Rows that succeeded are not touched again.
+2. **Per row, inside the run** — a row that still fails is *deferred*, not fatal, **and so
+   is every row after it**. Rows run in settings order and a later one may read what an
+   earlier one writes, so running the rest now would use stale input and nothing would
+   come back to redo them. The run re-attempts the deferred rows after 30s, 2m, 5m, 10m,
+   until `--retry-window-minutes` (default 10) is spent; once the blocker clears, the rows
+   behind it run in the same pass. Rows that already succeeded are never touched again.
+   This applies to every mode, not only the database rebuild. A *permanent* failure does
+   not block what follows: it will not fix itself, so holding the run behind it would turn
+   one broken row into a dead run.
 3. **A later run** — anything still deferred is written to `retry.json` and the workflow
    dispatches itself again after 15m, then 45m, then 90m, up to `--max-attempts` (default 4).
    The new dispatch carries the same parameters plus only the rows that failed, so a partial

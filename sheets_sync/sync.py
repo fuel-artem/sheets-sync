@@ -200,11 +200,29 @@ def execute(client: SheetsClient, job) -> JobResult:
 
 
 def _pass(client: SheetsClient, jobs: Dict[int, Any], results: Dict[int, JobResult]):
-    """Run one pass over the pending rows; return the ones to try again."""
+    """Run one pass over the pending rows; return the ones to try again.
+
+    Rows run in settings order and a later row may read what an earlier one
+    writes - a copy row pulling from the database the rebuild just refreshed is
+    the usual case. So a transient failure defers the rest of the run as well as
+    the row that hit it: running them now would use stale input, and nothing
+    would come back to redo them once the retry succeeds.
+
+    A permanent failure does not: it will not fix itself on a retry, so blocking
+    everything behind it only turns one broken row into a dead run.
+    """
     still_pending: Dict[int, Any] = {}
     last_transient = ""
+    blocked_by = ""
 
     for index, job in jobs.items():
+        if blocked_by:
+            results[index] = JobResult(
+                job.name, "deferred", detail=f"waiting for {blocked_by}"
+            )
+            still_pending[index] = job
+            log.info("[%s] deferred behind %s", job.name, blocked_by)
+            continue
         try:
             results[index] = execute(client, job)
         except Exception as exc:  # noqa: BLE001
@@ -213,6 +231,7 @@ def _pass(client: SheetsClient, jobs: Dict[int, Any], results: Dict[int, JobResu
                 last_transient = str(error)
                 results[index] = JobResult(job.name, "deferred", detail=str(error))
                 still_pending[index] = job
+                blocked_by = job.name
                 log.warning("[%s] transient failure, will retry: %s", job.name, error)
             else:
                 results[index] = JobResult(job.name, "failed", detail=str(error))
