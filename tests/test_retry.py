@@ -139,7 +139,7 @@ run(c,"SSID","import",jobs=jobs,user="me@x.com",attempt=4,max_attempts=4,
 assert c.status["J2"].startswith("Failed:"), c.status["J2"]
 print("  gave up     ->", c.status["J2"][:72])
 for m,expect in (("import","Import successful"),("export","Export successful"),
-                 ("database","Database import successful")):
+                 ("database","Import successful")):
     S.run_job=ok_run_job
     c=Client(set(),"transient")
     run(c,"SSID",m,jobs=jobs,user="me@x.com",retry_window=0,sleep=lambda s: None)

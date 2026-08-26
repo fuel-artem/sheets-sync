@@ -231,8 +231,10 @@ def _pass(client: SheetsClient, jobs: Dict[int, Any], results: Dict[int, JobResu
 # is over.
 STATUS_FAILED = "Failed"
 
-# Mirrors modeLabel_ in GithubTrigger.gs.
-MODE_LABEL = {"import": "Import", "export": "Export", "database": "Database import"}
+# The database rebuild is an import as far as anyone reading the sheet is
+# concerned - it runs off the Import Settings tab - so it reports as one. The
+# cell it lands in is what tells the two apart.
+MODE_LABEL = {"import": "Import", "export": "Export", "database": "Import"}
 
 def _status_message(report: RunReport, retry_at: Optional[datetime], timezone_name: str) -> str:
     """

@@ -199,7 +199,7 @@ meaning by mode. Technical detail appears only when something went wrong:
 
 | State | Cell |
 |---|---|
-| success | `Import successful`, `Export successful`, `Database import successful` - no counts, see below |
+| success | `Import successful`, `Export successful` - the database rebuild reports as an import too; the cell it lands in tells them apart |
 | in progress | `In progress: import requested. This cell updates when it finishes.` - written by the sheet button, and the only place this state is used |
 | failed | `Failed: Payroll: HTTP 403 (permissiondenied): caller does not have permission` |
 | failed | `Failed: Payroll did not sync - Google Sheets was temporarily unavailable. Retry 2 of 4 scheduled at 08/24/2026 18:05:34, no action needed. Last error - HTTP 503 ...` |
