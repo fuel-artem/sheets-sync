@@ -1,7 +1,7 @@
 """The Database import.
 
 Unlike the plain import, this one does not copy a range. It rebuilds the
-`General Database` tab: existing transactions whose source is being refreshed
+`General database` tab: existing transactions whose source is being refreshed
 are dropped, every enabled source is re-read, each transaction is widened into
 the database layout and enriched with the CF / P&L / BS blocks looked up in the
 `AI Settings` handbook, then the whole tab is rewritten in one pass.
@@ -41,7 +41,7 @@ KEY_SEPARATOR = "\u00ac"  # the "¬" used to join the handbook key
 class DatabaseConfig:
     """Everything the original script kept as constants at the top of the file."""
 
-    database_tab: str = "General Database"
+    database_tab: str = "General database"
     ai_tab: str = "AI Settings"
     # AI Settings blocks: first three columns form the key, the rest is the payload.
     ai_ranges: Dict[str, str] = field(
@@ -119,7 +119,7 @@ class DatabaseJob:
     # every enabled settings row, not only the database ones.
     replaced_labels: List[str]
     config: DatabaseConfig = field(default_factory=DatabaseConfig)
-    name: str = "General Database"
+    name: str = "General database"
 
     def as_dict(self) -> dict:
         return {
@@ -138,7 +138,7 @@ class DatabaseJob:
             sources=[DatabaseSource(**s) for s in data.get("sources", [])],
             replaced_labels=list(data.get("replaced_labels", [])),
             config=DatabaseConfig.from_dict(data.get("config")),
-            name=data.get("name", "General Database"),
+            name=data.get("name", "General database"),
         )
 
 

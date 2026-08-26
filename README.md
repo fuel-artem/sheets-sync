@@ -17,7 +17,7 @@ Sheet button (GithubTrigger.gs) ──POST──▶ GitHub Actions ──▶ pyt
 |---|---|---|
 | `export` | Export Settings | copies each enabled range to its target |
 | `import` | Import Settings | the same, in the other direction |
-| `database` | Import Settings + AI Settings | rebuilds `General Database` from every enabled source, then copies the non-database rows |
+| `database` | Import Settings + AI Settings | rebuilds `General database` from every enabled source, then copies the non-database rows |
 
 ## Layout it expects
 
@@ -116,7 +116,7 @@ Exit codes: `0` clean or retry scheduled, `1` permanent failure, `2` bad usage,
 
 1. read the CF / P&L / BS handbooks from `AI Settings` (`A3:G`, `I3:O`, `Q3:W`), keyed on
    `category ¬ subcategory ¬ sign`;
-2. drop the basic filter, read `General Database` as **display values**, and keep only rows
+2. drop the basic filter, read `General database` as **display values**, and keep only rows
    whose source label is not being refreshed — the label list covers every enabled settings
    row, database or not;
 3. blank columns 38–42 of those survivors so the month/year formulas are not carried over;

@@ -63,5 +63,5 @@ status block. Read the run summary, then repeat with `dry_run: false` on a **cop
 spreadsheet before pointing it at the live one.
 
 For the database mode in particular, confirm on that copy that columns 38–42 of
-`General Database` come back the way you expect: the rebuild clears from `A2` to the last
+`General database` come back the way you expect: the rebuild clears from `A2` to the last
 column, matching the original script.

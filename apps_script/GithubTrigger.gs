@@ -38,7 +38,7 @@ const DATABASE_CONFIG = {
   keep_columns: 37,
   trailing_blanks: 5,
   trailing_new: 3,
-  database_tab: 'General Database',
+  database_tab: 'General database',
   ai_tab: 'AI Settings',
   ai_ranges: { cf: 'A3:G', pl: 'I3:O', bs: 'Q3:W' }
 };
@@ -64,7 +64,7 @@ function manualExport() {
 }
 
 /**
- * Database import: rebuilds General Database from every enabled source and
+ * Database import: rebuilds General database from every enabled source and
  * enriches each transaction from the AI Settings handbook. Status lands in
  * L2:L4 rather than J2:J4, as in the original script.
  */

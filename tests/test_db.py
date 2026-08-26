@@ -48,13 +48,13 @@ class Client:
             if a1.endswith("A3:G"): return [["Ops","Payroll","-","cf1","cf2","cf3","cf4"]]
             if a1.endswith("I3:O"): return [["Ops","Payroll","-","pl1","pl2","pl3","pl4"]]
             return []
-        if "General Database" in a1:   # existing rows, display values
+        if "General database" in a1:   # existing rows, display values
             return [["Bank"]+["old"]*36+["m","y","","",""],   # replaced -> dropped
                     ["Legacy","2026-01-01","","", *["l"]*4, "1,234.56", *[""]*11, "Payroll", *[""]*17],
                     ["Legacy","2026-01-01","","", *["l"]*4, "1,234.56", *[""]*29]]  # no category -> purged
         return []
     def sheet_props(self, ss, gid=None, title=None, refresh=False):
-        return {"sheetId": 5, "title": title or ("Source" if ss == "SRC" else "General Database"),
+        return {"sheetId": 5, "title": title or ("Source" if ss == "SRC" else "General database"),
                 "gridProperties":{"rowCount":10,"columnCount":42}}
     def clear_basic_filter(self, ss, sid): self.filters.append("clear"); return True
     def set_basic_filter(self, ss, grid): self.filters.append("set"); return True
