@@ -40,6 +40,9 @@ FLAG_COLUMN = {
 }
 
 # Status block: error, timestamp, user. The database variant keeps it in L.
+# Shared with the Apps Script, which formats its own timestamp the same way.
+TIME_FORMAT = "%m/%d/%Y %H:%M:%S"
+
 STATUS_CELLS = {
     "import": ("J2", "J3", "J4"),
     "export": ("J2", "J3", "J4"),
@@ -115,7 +118,7 @@ def write_status(
     mode: str,
     when: Optional[datetime],
     user: str,
-    error: str = "",
+    status: str = "",
     timezone: str = "UTC",
     run_url_cell: Optional[str] = None,
     run_url: str = "",
@@ -128,13 +131,13 @@ def write_status(
     the dispatch payload rather than from here.
     """
     tab = TAB[mode]
-    error_cell, date_cell, user_cell = tuple(status_cells or STATUS_CELLS[mode])
+    status_cell, date_cell, user_cell = tuple(status_cells or STATUS_CELLS[mode])
     formatted = ""
     if when is not None:
-        formatted = when.astimezone(ZoneInfo(timezone)).strftime("%m/%d/%Y %H:%M:%S")
+        formatted = when.astimezone(ZoneInfo(timezone)).strftime(TIME_FORMAT)
 
     data = [
-        {"range": with_sheet_title(error_cell, tab), "values": [[str(error or "")]]},
+        {"range": with_sheet_title(status_cell, tab), "values": [[str(status or "")]]},
         {"range": with_sheet_title(date_cell, tab), "values": [[formatted]]},
         {"range": with_sheet_title(user_cell, tab), "values": [[user or ""]]},
     ]

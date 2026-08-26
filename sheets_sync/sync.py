@@ -35,7 +35,7 @@ from .a1 import (
 from .client import SheetsClient
 from .database import DatabaseConfig, DatabaseJob, run_database_job, read_database_settings
 from .errors import PermanentError, TransientError, classify
-from .settings import SyncJob, read_jobs, write_status
+from .settings import TIME_FORMAT, SyncJob, read_jobs, write_status
 
 log = logging.getLogger(__name__)
 
@@ -226,40 +226,64 @@ def _pass(client: SheetsClient, jobs: Dict[int, Any], results: Dict[int, JobResu
     return still_pending, last_transient
 
 
+# The three words the status cell leads with. Anyone reading the sheet needs to
+# know which of these applies without parsing what follows.
+STATUS_OK = "Success"
+STATUS_FAILED = "Failed"
+STATUS_RUNNING = "In progress"
+
+
+def _success_detail(report: RunReport) -> str:
+    """Counts only. Nothing technical belongs in the cell when a run worked."""
+    if not report.results:
+        return ": nothing to sync"
+    synced = sum(1 for r in report.results if r.status == "ok")
+    skipped = sum(1 for r in report.results if r.status == "skipped")
+    detail = f": {synced} row(s) synced"
+    if skipped:
+        detail += f", {skipped} skipped"
+    return detail
+
+
 def _status_message(report: RunReport, retry_at: Optional[datetime], timezone_name: str) -> str:
     """
-    What lands in J2.
+    What lands in the status cell.
 
-    A run can carry both kinds of failure at once: one row with a bad range,
-    another deferred by an outage. Both are reported, the permanent error
-    first, so a failure a human must fix never hides a retry that is still
-    coming - nor the other way round.
+    Leads with Success, Failed or In progress so the state is readable at a
+    glance, and appends technical detail only when something went wrong. A run
+    can be two things at once - one row with a bad range, another deferred by an
+    outage - and then Failed wins the headline, because that is the half a human
+    has to act on, with the retry named after it.
     """
-    parts: List[str] = []
+    names = ", ".join(job.name for job in report.deferred) or "settings"
+    retry_pending = bool(report.retry_request and retry_at is not None)
+    gave_up = bool((report.deferred or report.reread_settings) and not retry_pending)
 
+    if not report.error and not retry_pending and not gave_up:
+        return STATUS_OK + _success_detail(report)
+
+    details: List[str] = []
     if report.error:
-        parts.append(report.error)
+        details.append(report.error)
 
-    # reread_settings means the tab itself failed transiently, so there are no
-    # deferred rows to name even though a retry is scheduled.
-    if report.deferred or report.reread_settings:
-        names = ", ".join(job.name for job in report.deferred) or "settings"
-        if report.retry_request and retry_at is not None:
-            from zoneinfo import ZoneInfo
+    if retry_pending:
+        from zoneinfo import ZoneInfo
 
-            when = retry_at.astimezone(ZoneInfo(timezone_name)).strftime("%m/%d/%Y %H:%M:%S")
-            parts.append(
-                f"Google Sheets temporarily unavailable. Retry {report.retry_request['attempt']}"
-                f" of {report.retry_request['max_attempts']} scheduled for {when}."
-                f" Waiting on: {names}. Last error - {report.transient_detail}"
-            )
-        else:
-            parts.append(
-                f"Gave up after {report.attempt} attempts while Google Sheets was unavailable."
-                f" Not synced: {names}. Last error - {report.transient_detail}"
-            )
+        when = retry_at.astimezone(ZoneInfo(timezone_name)).strftime(TIME_FORMAT)
+        details.append(
+            f"Google Sheets was temporarily unavailable, so {names} did not sync yet."
+            f" Retry {report.retry_request['attempt']} of"
+            f" {report.retry_request['max_attempts']} is scheduled for {when};"
+            f" nothing to do. Last error - {report.transient_detail}"
+        )
+    elif gave_up:
+        details.append(
+            f"Google Sheets stayed unavailable after {report.attempt} attempts."
+            f" Not synced: {names}. Last error - {report.transient_detail}"
+        )
 
-    return " | ".join(parts)
+    state = STATUS_FAILED if (report.error or gave_up) else STATUS_RUNNING
+    return f"{state}: " + " | ".join(details)
 
 
 def run(
@@ -379,7 +403,7 @@ def run(
                 mode,
                 datetime.now(dt_timezone.utc),
                 user,
-                _status_message(report, retry_at, timezone_name),
+                status=_status_message(report, retry_at, timezone_name),
                 timezone=timezone_name,
                 run_url_cell=run_url_cell,
                 run_url=run_url,

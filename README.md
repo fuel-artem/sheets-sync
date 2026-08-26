@@ -192,20 +192,24 @@ Three layers of retry, each only for transient failures:
    The new dispatch carries the same parameters plus only the rows that failed, so a partial
    sync resumes rather than repeating.
 
-Meanwhile J2 says which of the three is happening:
+The status cell leads with one of three words, so the state is readable without parsing
+what follows. Technical detail is appended only when something went wrong:
 
-- retry pending → `Google Sheets temporarily unavailable. Retry 2 of 4 scheduled for 08/24/2026 18:05:34. Waiting on: Payroll. Last error - HTTP 503 …`
-- attempts exhausted → `Gave up after 4 attempts … Not synced: Payroll.`
-- permanent → the error itself, e.g. `Payroll: HTTP 403 (permissiondenied): caller does not have permission`
+| State | Cell |
+|---|---|
+| success | `Success: 2 row(s) synced`, `Success: 1 row(s) synced, 1 skipped`, `Success: nothing to sync` |
+| in progress | `In progress: import requested. This cell updates when it finishes.` (written by the sheet button) |
+| in progress | `In progress: Google Sheets was temporarily unavailable, so Payroll did not sync yet. Retry 2 of 4 is scheduled for 08/24/2026 18:05:34; nothing to do. Last error - HTTP 503 ...` |
+| failed | `Failed: Payroll: HTTP 403 (permissiondenied): caller does not have permission` |
+| failed | `Failed: Google Sheets stayed unavailable after 4 attempts. Not synced: Payroll. Last error - HTTP 503 ...` |
 
-A run can hit both kinds at once. J2 then carries the permanent error and the retry note
-separated by ` | `, so a row a human must fix never hides a retry that is still coming:
+A run can be two things at once - one row with a bad range, another deferred by an outage.
+`Failed` wins the headline, since that is the half a human has to act on, and the retry is
+named after it separated by ` | `. Both writers use the same three words: the Apps Script
+sets `In progress` when it dispatches, and the workflow overwrites it with the outcome.
 
-> `Payroll: HTTP 403 (permissiondenied): ... | Google Sheets temporarily unavailable.
-> Retry 2 of 4 scheduled for 08/24/2026 18:51:11. Waiting on: Taxes. Last error - HTTP 503 ...`
-
-If the settings tab itself is what failed transiently there are no rows to name, and the
-note reads `Waiting on: settings`.
+Column 3 of the block always carries a timestamp, in both writers and on failures too, so a
+stale status is never mistaken for a fresh one.
 
 A permanent failure in one row no longer aborts the rest of the run (the Apps Script version
 stopped at the first exception); the remaining rows still sync and every failure is listed in

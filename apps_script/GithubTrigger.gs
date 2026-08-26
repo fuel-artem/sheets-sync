@@ -24,6 +24,11 @@ const GIT_REF = 'main';
 // them can open the repository, so the message has to name a human.
 const SUPPORT_CONTACT = 'artemomelchenko@fuelfinance.me';
 
+// The same words sheets_sync.sync writes, so the cell reads the same way
+// whichever half of the system touched it last.
+const STATUS_FAILED = 'Failed';
+const STATUS_RUNNING = 'In progress';
+
 // Pinned REST API version. GitHub currently supports '2026-03-10' and the older
 // '2022-11-28'. Only the dispatch POST is called and it answers 204 with no body,
 // so there is no response shape a version bump could break.
@@ -158,7 +163,7 @@ function dispatchWorkflow_(mode, execution, silent) {
   if (!token) {
     const friendly = modeLabel_(mode) + ' is not set up on this spreadsheet yet,'
       + ' so nothing was run. Please contact ' + SUPPORT_CONTACT + '.';
-    setQueuedStatus_(mode, friendly, Session.getActiveUser().getEmail());
+    setSheetStatus_(mode, STATUS_FAILED + ': ' + friendly, Session.getActiveUser().getEmail());
     if (!silent) showAlert_(friendly);
     throw new Error('GITHUB_TOKEN is not set in Script Properties');
   }
@@ -209,12 +214,17 @@ function dispatchWorkflow_(mode, execution, silent) {
     const friendly = friendlyError_(mode, code);
     // The reader sees the plain sentence; the detail stays in the execution log.
     console.error('dispatch failed: HTTP ' + code + ': ' + response.getContentText());
-    setQueuedStatus_(mode, friendly, email);
+    setSheetStatus_(mode, STATUS_FAILED + ': ' + friendly, email);
     if (!silent) showAlert_(friendly);
     throw new Error('dispatch failed with HTTP ' + code);
   }
 
-  setQueuedStatus_(mode, '', email, true);
+  setSheetStatus_(
+    mode,
+    STATUS_RUNNING + ': ' + modeLabel_(mode).toLowerCase()
+      + ' requested. This cell updates when it finishes.',
+    email
+  );
   if (!silent) {
     const cell = mode === 'database' ? DATABASE_CONFIG.status_cells[0] : 'J2';
     ss.toast(
@@ -227,20 +237,24 @@ function dispatchWorkflow_(mode, execution, silent) {
 }
 
 /**
- * Clear the previous error and mark the run as queued.
- * The workflow overwrites J2:J4 when it finishes.
+ * Write the status block: the state anyone reading the sheet needs, the time,
+ * and who asked for it. The workflow overwrites all three when it finishes.
  */
-function setQueuedStatus_(mode, error, user, queued) {
+function setSheetStatus_(mode, text, user) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
   const tab = mode === 'export' ? 'Export Settings' : 'Import Settings';
   // The database variant keeps its own block; DATABASE_CONFIG is the one place
   // that says where, and the same value is sent to Python in the payload.
   const cells = mode === 'database'
     ? DATABASE_CONFIG.status_cells
     : ['J2', 'J3', 'J4'];
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(tab);
+  const sheet = ss.getSheetByName(tab);
   if (!sheet) return;
-  sheet.getRange(cells[0]).setValue(error || '');
-  sheet.getRange(cells[1]).setValue(queued ? 'queued ' + new Date().toISOString() : '');
+  sheet.getRange(cells[0]).setValue(text);
+  // Always stamped, so a failure never sits under a stale time.
+  sheet.getRange(cells[1]).setValue(
+    Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'MM/dd/yyyy HH:mm:ss')
+  );
   sheet.getRange(cells[2]).setValue(user || '');
 }
 
