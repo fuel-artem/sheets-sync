@@ -36,9 +36,10 @@ const STATUS_RUNNING = 'In progress';
 // Both tabs keep their status block in column J: state, timestamp, user.
 const STATUS_CELLS = ['J2', 'J3', 'J4'];
 
-// Pinned REST API version. GitHub currently supports '2026-03-10' and the older
-// '2022-11-28'. Only the dispatch POST is called and it answers 204 with no body,
-// so there is no response shape a version bump could break.
+// Pinned REST API version. The two supported versions do not answer the dispatch
+// the same way: '2026-03-10' returns 200 with a body carrying workflow_run_id,
+// where '2022-11-28' returned 204 with no body. Any 2xx counts as success below,
+// so neither version is a trap.
 const GITHUB_API_VERSION = '2026-03-10';
 
 // true  -> the enabled rows are read here and sent in the payload
@@ -177,13 +178,24 @@ function dispatchWorkflow_(mode, execution, silent) {
   });
 
   const code = response.getResponseCode();
-  if (code !== 204) {
+  // Not `!== 204`: that rejected every successful dispatch under 2026-03-10.
+  if (code < 200 || code >= 300) {
     const friendly = friendlyError_(mode, code);
     // The reader sees the plain sentence; the detail stays in the execution log.
     console.error('dispatch failed: HTTP ' + code + ': ' + response.getContentText());
     setSheetStatus_(mode, STATUS_FAILED + ': ' + friendly, email);
     if (!silent) showAlert_(friendly);
     throw new Error('dispatch failed with HTTP ' + code);
+  }
+
+  // 2026-03-10 names the run it created; worth having in the log when tracing one.
+  try {
+    const created = JSON.parse(response.getContentText() || '{}');
+    if (created.workflow_run_id) {
+      console.info('dispatched run ' + created.workflow_run_id);
+    }
+  } catch (e) {
+    // 2022-11-28 answers with no body. Nothing to log, nothing wrong.
   }
 
   setSheetStatus_(
