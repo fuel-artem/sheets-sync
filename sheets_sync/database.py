@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+from collections import OrderedDict
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -128,6 +129,10 @@ class DatabaseJob:
     replaced_labels: List[str]
     config: DatabaseConfig = field(default_factory=DatabaseConfig)
     name: str = "General database"
+    # The to_url of the database rows: the database tab and AI Settings live in
+    # that spreadsheet, not necessarily the one holding Import Settings. Empty
+    # means they are in the settings spreadsheet.
+    database_url: str = ""
 
     def as_dict(self) -> dict:
         return {
@@ -137,6 +142,7 @@ class DatabaseJob:
             "sources": [s.as_dict() for s in self.sources],
             "replaced_labels": list(self.replaced_labels),
             "config": self.config.to_dict(),
+            "database_url": self.database_url,
         }
 
     @classmethod
@@ -147,6 +153,7 @@ class DatabaseJob:
             replaced_labels=list(data.get("replaced_labels", [])),
             config=DatabaseConfig.from_dict(data.get("config")),
             name=data.get("name", "General database"),
+            database_url=data.get("database_url", ""),
         )
 
 
@@ -278,8 +285,19 @@ def _database_index(config: DatabaseConfig, transaction_index: int) -> int:
 
 def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
     config = job.config
-    ss_id = job.settings_spreadsheet_id
-    props = client.sheet_props(ss_id, title=config.database_tab)
+    # The database and AI Settings tabs live wherever the database rows point,
+    # which is usually not the spreadsheet holding Import Settings.
+    ss_id = (
+        spreadsheet_id_from_url(job.database_url)
+        if job.database_url
+        else job.settings_spreadsheet_id
+    )
+    # A gid in the url beats the configured title, which is only a fallback.
+    gid = sheet_gid_from_url(job.database_url) if job.database_url else None
+    props = client.sheet_props(
+        ss_id, gid=gid, title=None if gid is not None else config.database_tab
+    )
+    database_tab = props["title"]
     sheet_id = props["sheetId"]
     grid = props.get("gridProperties", {})
     max_rows = grid.get("rowCount", 0)
@@ -295,7 +313,7 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
     existing_raw = (
         client.get_values(
             ss_id,
-            with_sheet_title(f"A2:{last_column}", config.database_tab),
+            with_sheet_title(f"A2:{last_column}", database_tab),
             value_render_option="FORMATTED_VALUE",
         )
         or []
@@ -360,7 +378,7 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
             start_column_index=0,
             end_column_index=max_cols,
         ),
-        config.database_tab,
+        database_tab,
     )
 
     width = max((len(row) for row in output), default=0)
@@ -374,7 +392,7 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
                 end_row_index=1 + len(padded),
                 start_column_index=0,
                 end_column_index=width,
-            ).to_a1(config.database_tab),
+            ).to_a1(database_tab),
             padded,
         )
 
@@ -395,6 +413,20 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
 
 
 # --------------------------------------------------------------- settings read
+
+def _target_key(tab: str, line: int, url: str) -> Tuple[str, Optional[int]]:
+    """Which database tab a row feeds: (spreadsheet id, gid).
+
+    A blank column D means the tab is in the settings spreadsheet, under the
+    configured title - how a single-database sheet has always behaved.
+    """
+    if not url:
+        return ("", None)
+    try:
+        return (spreadsheet_id_from_url(url), sheet_gid_from_url(url))
+    except ValueError as exc:
+        raise PermanentError(f"{tab} row {line} (column D): {exc}") from exc
+
 
 def read_database_settings(
     client: SheetsClient,
@@ -421,12 +453,11 @@ def read_database_settings(
             continue
         enabled.append((offset + 2, row))
 
-    # Every enabled row's label is cleared from the database, database row or not.
-    labels = [str(_cell(row, config.source_label_column)).strip() for _, row in enabled]
-
-    sources: List[DatabaseSource] = []
+    # One entry per distinct database tab, in first-appearance order.
+    groups: "OrderedDict[Tuple[str, Optional[int]], Dict[str, Any]]" = OrderedDict()
     others: List[SyncJob] = []
     over_length: List[str] = []
+    other_labels: List[str] = []
 
     for line, row in enabled:
         name = str(_cell(row, COL_NAME)).strip()
@@ -436,16 +467,24 @@ def read_database_settings(
             if declared_int is not None and not math.isnan(js_parse_float(declared)):
                 if declared_int > config.transaction_length:
                     over_length.append(f"{name} (row {line}: {declared_int})")
-            sources.append(
+            url = str(_cell(row, 3)).strip()
+            group = groups.setdefault(
+                _target_key(tab, line, url),
+                {"url": url, "sources": [], "labels": []},
+            )
+            label = str(_cell(row, config.source_label_column)).strip()
+            group["labels"].append(label)
+            group["sources"].append(
                 DatabaseSource(
                     name=name,
-                    label=str(_cell(row, config.source_label_column)).strip(),
+                    label=label,
                     from_url=str(_cell(row, 1)).strip(),
                     from_range=str(_cell(row, 2)).strip(),
                     declared_length=declared_int,
                 )
             )
         else:
+            other_labels.append(str(_cell(row, config.source_label_column)).strip())
             job = SyncJob.from_row(row)
             missing = [
                 f
@@ -466,20 +505,28 @@ def read_database_settings(
         )
 
     jobs: List[Any] = []
-    if sources:
+    for index, ((ss, _gid), group) in enumerate(groups.items(), start=1):
+        # Only this tab's own labels are cleared from it. The enabled copy rows'
+        # labels are cleared from every database, as the original did.
+        name = config.database_tab
+        if len(groups) > 1:
+            name = f"{config.database_tab} #{index}" + (f" ({ss[:8]})" if ss else "")
         jobs.append(
             DatabaseJob(
                 settings_spreadsheet_id=settings_spreadsheet_id,
-                sources=sources,
-                replaced_labels=labels,
+                sources=group["sources"],
+                replaced_labels=group["labels"] + other_labels,
                 config=config,
+                database_url=group["url"],
+                name=name,
             )
         )
     jobs.extend(others)
     log.info(
-        "%s: %d database source(s), %d copy row(s) for execution=%s",
+        "%s: %d database tab(s), %d source(s), %d copy row(s) for execution=%s",
         tab,
-        len(sources),
+        len(groups),
+        sum(len(g["sources"]) for g in groups.values()),
         len(others),
         execution,
     )

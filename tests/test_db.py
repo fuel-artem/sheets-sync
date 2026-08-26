@@ -117,3 +117,39 @@ for cfg, expect in ((DatabaseConfig(), "L2"), (cfg_j, "J2")):
     assert "not found" in c.cells[key]
     print("  %s -> %s" % (expect, c.cells[key][:58]))
 print("PASS status cells honoured")
+
+print()
+print("== database rows grouped by target spreadsheet ==")
+DB1="https://docs.google.com/spreadsheets/d/DBONE/edit#gid=11"
+DB2="https://docs.google.com/spreadsheets/d/DBTWO/edit#gid=22"
+MULTI=[
+ ["Bank",SRC,"A2:U",DB1,"","Bank",True,False,True,21],
+ ["Stripe",SRC,"A2:U",DB1,"","Stripe",True,False,True,21],
+ ["Payroll",SRC,"A2:U",DB2,"","Payroll",True,False,True,21],
+ ["Rates",SRC,"A2:C","https://docs.google.com/spreadsheets/d/DST/edit#gid=9","A2","Rates",False,False,True,""],
+]
+class MultiClient:
+    policy=None
+    def get_values(self, ss, a1, **k): return MULTI
+dbjobs=[j for j in read_database_settings(MultiClient(),"SSID","manual",DatabaseConfig())
+        if isinstance(j, DatabaseJob)]
+assert len(dbjobs)==2, [j.name for j in dbjobs]
+assert [s.name for s in dbjobs[0].sources]==["Bank","Stripe"], dbjobs[0].sources
+assert [s.name for s in dbjobs[1].sources]==["Payroll"], dbjobs[1].sources
+assert "DBONE" in dbjobs[0].database_url and "DBTWO" in dbjobs[1].database_url
+# A tab only clears its own labels, plus the enabled copy rows as before.
+assert dbjobs[0].replaced_labels==["Bank","Stripe","Rates"], dbjobs[0].replaced_labels
+assert dbjobs[1].replaced_labels==["Payroll","Rates"], dbjobs[1].replaced_labels
+assert dbjobs[0].name!=dbjobs[1].name, "jobs must be distinguishable in the status cell"
+for j in dbjobs:
+    rt=DatabaseJob.from_dict(j.as_dict())
+    assert rt.database_url==j.database_url and rt.replaced_labels==j.replaced_labels
+print("  %s <- %s" % (dbjobs[0].name, [s.name for s in dbjobs[0].sources]))
+print("  %s <- %s" % (dbjobs[1].name, [s.name for s in dbjobs[1].sources]))
+
+# One target keeps the plain name and no suffix.
+single=[j for j in read_database_settings(Client(),"SSID","manual",DatabaseConfig())
+        if isinstance(j, DatabaseJob)]
+assert len(single)==1 and single[0].name=="General database", [j.name for j in single]
+print("  single target ->", single[0].name, "| url:", repr(single[0].database_url))
+print("PASS grouping")

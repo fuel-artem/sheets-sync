@@ -126,6 +126,10 @@ Exit codes: `0` clean or retry scheduled, `1` permanent failure, `2` bad usage,
 
 `database.py` rebuilds the whole tab rather than copying a range:
 
+0. resolve where the database lives: **column D of the database rows**. The database tab
+   and `AI Settings` sit in that spreadsheet, which is usually not the one holding Import
+   Settings. A `#gid=` in the url picks the tab and beats `database_tab`, which is only a
+   fallback for a blank column D (meaning "in the settings spreadsheet");
 1. read the CF / P&L / BS handbooks from `AI Settings` (`A3:G`, `I3:O`, `Q3:W`), keyed on
    `category ¬ subcategory ¬ sign`;
 2. drop the basic filter, read `General database` as **display values**, and keep only rows
@@ -160,8 +164,15 @@ Details that are easy to get wrong, and are covered by tests:
 - **An empty source range is skipped**, where the original threw on `undefined.forEach` and
   lost the rest of the sources.
 
-A database rebuild is one unit of work for retry purposes: it either completes or is deferred
-whole, and it round-trips through the retry payload so a later attempt resumes it without
+Database rows are grouped by the tab they feed, so one Import Settings tab can rebuild
+several databases in several spreadsheets — one job each, named `General database #1 (DBONE)`
+and so on when there is more than one, so the status cell can tell them apart. Each tab
+clears only its own rows' labels, plus the enabled non-database rows' labels, which are
+cleared from every database as the original did. Leave column F empty on copy rows unless
+you mean that.
+
+A rebuild is one unit of work for retry purposes: it either completes or is deferred whole,
+and it round-trips through the retry payload so a later attempt resumes it without
 re-reading the settings tab.
 
 ## Failure handling
