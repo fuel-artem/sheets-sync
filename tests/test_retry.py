@@ -104,7 +104,7 @@ print("J2:", msg)
 print()
 print("== settings tab itself deferred ==")
 print()
-print("== the three headline states ==")
+print("== the headline states ==")
 def ok_run_job(client, job): return S.JobResult(job.name,"ok",10,5)
 S.run_job=ok_run_job
 c=Client(set(),"transient")
@@ -129,15 +129,16 @@ S.run_job=fake_run_job
 c=Client({"B"},"transient")
 run(c,"SSID","import",jobs=jobs,user="me@x.com",attempt=1,retry_window=0,
     sleep=lambda s: None, timezone_name="Europe/Kyiv")
-assert c.status["J2"].startswith("In progress:"), c.status["J2"]
-print("  in progress ->", c.status["J2"][:72])
+assert c.status["J2"].startswith("Failed:"), c.status["J2"]
+assert "scheduled at" in c.status["J2"], c.status["J2"]
+print("  retry due   ->", c.status["J2"][:76])
 
 c=Client({"B"},"transient")
 run(c,"SSID","import",jobs=jobs,user="me@x.com",attempt=4,max_attempts=4,
     retry_window=0,sleep=lambda s: None, timezone_name="Europe/Kyiv")
 assert c.status["J2"].startswith("Failed:"), c.status["J2"]
 print("  gave up     ->", c.status["J2"][:72])
-print("PASS all three states")
+print("PASS all states")
 
 S.run_job=orig
 class Boom(Client):
@@ -147,7 +148,7 @@ rep=run(c,"SSID","import",attempt=1,retry_window=0,sleep=lambda s: None,
         timezone_name="Europe/Kyiv")
 msg=c.status["J2"]
 assert "settings did not sync" in msg, "settings deferral not reported: " + repr(msg)
-assert msg.startswith("In progress:"), msg
+assert msg.startswith("Failed:"), msg
 print("PASS ->", msg[:110])
 
 S.run_job=orig

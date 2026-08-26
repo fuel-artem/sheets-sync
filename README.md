@@ -198,15 +198,16 @@ what follows. Technical detail is appended only when something went wrong:
 | State | Cell |
 |---|---|
 | success | `Success: 2 row(s) synced`, `Success: 1 row(s) synced, 1 skipped`, `Success: nothing to sync` |
-| in progress | `In progress: import requested. This cell updates when it finishes.` (written by the sheet button) |
-| in progress | `In progress: Google Sheets was temporarily unavailable, so Payroll did not sync yet. Retry 2 of 4 is scheduled for 08/24/2026 18:05:34; nothing to do. Last error - HTTP 503 ...` |
+| in progress | `In progress: import requested. This cell updates when it finishes.` - written by the sheet button, and the only place this state is used |
 | failed | `Failed: Payroll: HTTP 403 (permissiondenied): caller does not have permission` |
+| failed | `Failed: Payroll did not sync - Google Sheets was temporarily unavailable. Retry 2 of 4 scheduled at 08/24/2026 18:05:34, no action needed. Last error - HTTP 503 ...` |
 | failed | `Failed: Google Sheets stayed unavailable after 4 attempts. Not synced: Payroll. Last error - HTTP 503 ...` |
 
-A run can be two things at once - one row with a bad range, another deferred by an outage.
-`Failed` wins the headline, since that is the half a human has to act on, and the retry is
-named after it separated by ` | `. Both writers use the same three words: the Apps Script
-sets `In progress` when it dispatches, and the workflow overwrites it with the outcome.
+A deferred row is a failure with a retry attached, not a third state - nothing synced, and
+reporting progress while rows sit unwritten would be a lie. `In progress` therefore means
+only that a run is under way: the Apps Script writes it when it dispatches, and the
+workflow overwrites it with `Success` or `Failed`. A run that is both - one bad range plus
+one deferred row - reports `Failed` with the retry after it, separated by ` | `.
 
 Column 3 of the block always carries a timestamp, in both writers and on failures too, so a
 stale status is never mistaken for a fresh one.

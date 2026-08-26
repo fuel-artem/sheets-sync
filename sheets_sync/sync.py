@@ -226,11 +226,12 @@ def _pass(client: SheetsClient, jobs: Dict[int, Any], results: Dict[int, JobResu
     return still_pending, last_transient
 
 
-# The three words the status cell leads with. Anyone reading the sheet needs to
-# know which of these applies without parsing what follows.
+# The two outcomes a finished run can report. "In progress" belongs to the Apps
+# Script, which writes it when it dispatches; by the time this module writes the
+# cell the run is over, and a run that did not sync everything has failed even if
+# it will try again by itself.
 STATUS_OK = "Success"
 STATUS_FAILED = "Failed"
-STATUS_RUNNING = "In progress"
 
 
 def _success_detail(report: RunReport) -> str:
@@ -249,11 +250,10 @@ def _status_message(report: RunReport, retry_at: Optional[datetime], timezone_na
     """
     What lands in the status cell.
 
-    Leads with Success, Failed or In progress so the state is readable at a
-    glance, and appends technical detail only when something went wrong. A run
-    can be two things at once - one row with a bad range, another deferred by an
-    outage - and then Failed wins the headline, because that is the half a human
-    has to act on, with the retry named after it.
+    Leads with Success or Failed so the state is readable at a glance, and
+    appends technical detail only when something went wrong. A deferred row is a
+    failure with a retry attached, not a third state: nothing synced, and saying
+    otherwise would have the cell report progress while rows sat unwritten.
     """
     names = ", ".join(job.name for job in report.deferred) or "settings"
     retry_pending = bool(report.retry_request and retry_at is not None)
@@ -271,10 +271,10 @@ def _status_message(report: RunReport, retry_at: Optional[datetime], timezone_na
 
         when = retry_at.astimezone(ZoneInfo(timezone_name)).strftime(TIME_FORMAT)
         details.append(
-            f"Google Sheets was temporarily unavailable, so {names} did not sync yet."
+            f"{names} did not sync - Google Sheets was temporarily unavailable."
             f" Retry {report.retry_request['attempt']} of"
-            f" {report.retry_request['max_attempts']} is scheduled for {when};"
-            f" nothing to do. Last error - {report.transient_detail}"
+            f" {report.retry_request['max_attempts']} scheduled at {when},"
+            f" no action needed. Last error - {report.transient_detail}"
         )
     elif gave_up:
         details.append(
@@ -282,8 +282,7 @@ def _status_message(report: RunReport, retry_at: Optional[datetime], timezone_na
             f" Not synced: {names}. Last error - {report.transient_detail}"
         )
 
-    state = STATUS_FAILED if (report.error or gave_up) else STATUS_RUNNING
-    return f"{state}: " + " | ".join(details)
+    return f"{STATUS_FAILED}: " + " | ".join(details)
 
 
 def run(
