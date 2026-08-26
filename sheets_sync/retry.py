@@ -1,12 +1,7 @@
-"""Backoff policy for the two retry layers.
+"""Layer 1 of the retry stack: per API call, seconds. See `sync` for the rest.
 
-Layer 1 (here): per API call. Seconds. Covers the ordinary blip.
-Layer 2 (sync.run): per row, inside the same run. Minutes.
-Layer 3 (the workflow): a fresh run dispatched later. Tens of minutes.
-
-Only :class:`TransientError` is ever retried; a :class:`PermanentError` is
-raised on the first attempt so a bad range or a missing share does not sit in a
-backoff loop for an hour.
+Only :class:`TransientError` is retried. A :class:`PermanentError` raises on the
+first attempt, so a bad range never sits in a backoff loop.
 """
 
 from __future__ import annotations

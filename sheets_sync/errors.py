@@ -1,14 +1,8 @@
-"""Telling "try again in a minute" apart from "this will never work".
+"""Transient (retry) versus permanent (stop) failures.
 
-Everything the Sheets API can throw is funnelled through :func:`classify` and
-comes back as either :class:`TransientError` (retry) or :class:`PermanentError`
-(stop, a human has to fix something).
-
-The distinction is not the HTTP status alone. A 403 is usually a permission
-problem, but a 403 with ``reason: rateLimitExceeded`` is a throttle. A 429 is
-usually a throttle, but a 429 with ``reason: dailyLimitExceeded`` will not clear
-until midnight Pacific, so retrying for an hour is pointless. The reason code
-therefore wins over the status whenever it is present.
+The reason code in the body wins over the HTTP status, because the status alone
+is ambiguous: a 403 can be `permissionDenied` or a `rateLimitExceeded` throttle,
+and a 429 `dailyLimitExceeded` will not clear before midnight Pacific.
 """
 
 from __future__ import annotations

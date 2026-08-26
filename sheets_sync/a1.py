@@ -1,10 +1,5 @@
 """A1 notation and URL helpers.
 
-Replaces the FuelFinanceLibraryv2 helpers used by the Apps Script version:
-  getSpreadsheetIdFromUrl  -> spreadsheet_id_from_url
-  getSheetIdFromUrl        -> sheet_gid_from_url
-  a1Notation2GridRange     -> parse_a1 / GridRange
-
 GridRange indices follow the Sheets API convention: 0-based, end-exclusive,
 and ``None`` when the notation is open-ended (e.g. ``A2:H``).
 """

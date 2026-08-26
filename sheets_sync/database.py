@@ -1,10 +1,8 @@
-"""The Database import.
+"""The Database import: rebuilds the database tab rather than copying a range.
 
-Unlike the plain import, this one does not copy a range. It rebuilds the
-`General database` tab: existing transactions whose source is being refreshed
-are dropped, every enabled source is re-read, each transaction is widened into
-the database layout and enriched with the CF / P&L / BS blocks looked up in the
-`AI Settings` handbook, then the whole tab is rewritten in one pass.
+Rows whose source is being refreshed are dropped, every enabled source is
+re-read, each transaction is widened and enriched from the `AI Settings`
+handbook, then the tab is rewritten in one pass.
 
 Layout, in database column order:
 
@@ -15,8 +13,8 @@ Layout, in database column order:
     30..33   BS block                (from AI Settings Q3:W)
     34..36   month / year / spare    (blanked, they are filled elsewhere)
 
-Every one of those numbers lives in :class:`DatabaseConfig`, because each client
-copy of the original script edited them by hand.
+Every one of those numbers lives in :class:`DatabaseConfig`; each client sends
+its own in the dispatch payload.
 """
 
 from __future__ import annotations
@@ -169,10 +167,9 @@ _JS_NUMBER = re.compile(
 def js_parse_float(value: Any) -> float:
     """Mimic JavaScript parseFloat, including its leading-prefix behaviour.
 
-    This matters: the database rows are read as display values, so an amount can
-    arrive as "1,234.56" or "$1,234". JS parseFloat("1,234.56") is 1, and the
-    original kept that row. Python's float() would raise and silently change
-    which rows survive the filter.
+    The database is read as display values, so an amount can arrive as
+    "1,234.56". JS parseFloat gives 1 and the row survives; float() would raise
+    and silently change which rows do. Do not simplify.
     """
     if isinstance(value, bool):
         return math.nan
@@ -211,9 +208,9 @@ def _cell(row: Sequence[Any], index: int, default: Any = "") -> Any:
 def build_handbook(rows: Sequence[Sequence[Any]], block_width: int) -> Dict[str, List[Any]]:
     """AI Settings block -> {"category¬subcategory¬sign": [4 values]}.
 
-    Trailing empty cells are trimmed by the API, so short payloads are padded to
-    the block width; without that, a row missing its last cell would shift every
-    later column of the database by one.
+    The API trims trailing empty cells, so short payloads are padded to the block
+    width; otherwise a row missing its last cell shifts every later database
+    column by one.
     """
     handbook: Dict[str, List[Any]] = {}
     for row in rows:
@@ -246,8 +243,7 @@ def build_row(
     """One source transaction -> one database row."""
     values = list(transaction[: config.transaction_length])
     if len(transaction) > config.transaction_length:
-        # The original trusted the declared length in column J and would have
-        # silently shifted the AI blocks. Truncating keeps the layout intact.
+        # Truncating keeps the AI blocks aligned; the original shifted them.
         log.warning(
             "transaction is %d columns wide, expected %d; extra columns ignored",
             len(transaction),
@@ -327,8 +323,7 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
             from_ss, with_sheet_title(plain_range, from_props["title"])
         )
         if not values:
-            # The original threw a TypeError here; skipping keeps the other
-            # sources alive and leaves the reason in the log.
+            # Skipping keeps the other sources alive; the original threw here.
             log.warning("[%s] source range is empty, nothing imported", source.name)
             continue
         for transaction in values:
@@ -411,8 +406,7 @@ def read_database_settings(
 ) -> List[Any]:
     """Read the Import Settings tab of a database-import spreadsheet.
 
-    Returns the database rebuild first (if any source feeds it), then the plain
-    copy rows, matching the order of the original script.
+    The rebuild comes first (if any source feeds it), then the plain copy rows.
     """
     from .settings import FLAG_COLUMN
 

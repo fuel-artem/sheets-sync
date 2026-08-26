@@ -1,12 +1,4 @@
-"""Minimal Google Sheets API v4 wrapper.
-
-Provides the operations the Apps Script used, on top of a service account:
-  getSheetValuesSheets  -> get_values
-  clearValuesSheets     -> clear_range
-  setSheetValuesSheets  -> set_values
-  insertRowsAfter/...   -> insert_rows_after / insert_columns_after
-  getMaxRows/getLastRow -> sheet_props / data_extent
-"""
+"""Minimal Google Sheets API v4 wrapper over a service account."""
 
 from __future__ import annotations
 
@@ -99,8 +91,8 @@ class SheetsClient:
     def data_extent(self, spreadsheet_id: str, sheet_title: str) -> tuple:
         """(last_row, last_column) with data, 1-based; (0, 0) when empty.
 
-        Equivalent to Apps Script getLastRow()/getLastColumn(): the API trims
-        trailing empty rows and columns when a whole tab is requested.
+        Like getLastRow()/getLastColumn(): the API trims trailing empties when a
+        whole tab is requested.
         """
         values = self.get_values(spreadsheet_id, with_sheet_title("A1:ZZZ", sheet_title))
         if not values:

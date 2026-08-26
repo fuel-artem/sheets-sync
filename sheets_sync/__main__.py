@@ -1,9 +1,8 @@
 """CLI entrypoint: python -m sheets_sync --mode import --execution manual
 
-Every parameter that identifies *what* to sync arrives on the command line or in
-the environment set from the workflow inputs, which in turn come from the Apps
-Script dispatch. There is no repository-level default spreadsheet: a run with no
-settings_spreadsheet_id is an error, not a run against some other file.
+Everything identifying *what* to sync comes in as an argument. There is no
+default spreadsheet: a missing settings_spreadsheet_id is an error, never a run
+against some other file.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ EXIT_GAVE_UP = 75  # EX_TEMPFAIL: still transient, but no attempts left
 
 
 def _parse_inline_jobs(raw: Optional[str]) -> Optional[List[Any]]:
-    """Accept a JSON job list from the sheet, or from a retry dispatch.
+    """Accept a JSON job list from the sheet or a retry dispatch.
 
     A database rebuild round-trips through here too, so a retry resumes it
     without re-reading the settings tab.

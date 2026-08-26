@@ -1,18 +1,14 @@
-"""Port of insteadImportOptional / insteadExportOptional.
+"""Port of insteadImportOptional / insteadExportOptional, which differed only in
+the tab read and the checkbox column, so both are one code path here.
 
-The two Apps Script functions were identical apart from the tab they read and
-the checkbox column they filter on, so both collapse into one code path here.
-
-Three layers of retry sit around it:
+Three retry layers wrap it:
 
   1. per API call, in ``retry.call_with_retry`` - seconds;
-  2. per row, in :func:`run` - a row that fails transiently is retried a few
-     times inside this run, spaced minutes apart, until ``retry_window`` runs out;
-  3. per run - anything still failing is handed back as a retry request, which
-     the workflow turns into a fresh dispatch tens of minutes later.
+  2. per row, in :func:`run` - retried inside this run until ``retry_window``
+     runs out, then deferred;
+  3. per run - what is left becomes a retry request the workflow re-dispatches.
 
-A :class:`PermanentError` never enters any of them: the row is marked failed
-immediately and the run reports it.
+A :class:`PermanentError` enters none of them: the row is marked failed at once.
 """
 
 from __future__ import annotations
