@@ -192,12 +192,14 @@ Three layers of retry, each only for transient failures:
    The new dispatch carries the same parameters plus only the rows that failed, so a partial
    sync resumes rather than repeating.
 
-The status cell leads with one of three words, so the state is readable without parsing
-what follows. Technical detail is appended only when something went wrong:
+The status cell says whether the last run worked, so the state is readable without parsing
+what follows. A clean run says only that, with no numbers: one "row" means a settings row
+for a copy but the whole rebuilt tab for the database import, so a count would change
+meaning by mode. Technical detail appears only when something went wrong:
 
 | State | Cell |
 |---|---|
-| success | `Success: 2 row(s) synced`, `Success: 1 row(s) synced, 1 skipped`, `Success: nothing to sync` |
+| success | `Import successful`, `Export successful`, `Database import successful` - no counts, see below |
 | in progress | `In progress: import requested. This cell updates when it finishes.` - written by the sheet button, and the only place this state is used |
 | failed | `Failed: Payroll: HTTP 403 (permissiondenied): caller does not have permission` |
 | failed | `Failed: Payroll did not sync - Google Sheets was temporarily unavailable. Retry 2 of 4 scheduled at 08/24/2026 18:05:34, no action needed. Last error - HTTP 503 ...` |

@@ -109,20 +109,20 @@ def ok_run_job(client, job): return S.JobResult(job.name,"ok",10,5)
 S.run_job=ok_run_job
 c=Client(set(),"transient")
 run(c,"SSID","import",jobs=jobs,user="me@x.com",retry_window=0,sleep=lambda s: None)
-assert c.status["J2"] == "Success: 2 row(s) synced", c.status["J2"]
+assert c.status["J2"] == "Import successful", c.status["J2"]
 print("  success     ->", c.status["J2"])
 
 c=Client(set(),"transient")
 run(c,"SSID","import",jobs=[],user="me@x.com",retry_window=0,sleep=lambda s: None)
-assert c.status["J2"] == "Success: nothing to sync", c.status["J2"]
-print("  nothing     ->", c.status["J2"])
+assert c.status["J2"] == "Import successful", c.status["J2"]
+print("  no rows     ->", c.status["J2"])
 
 def skip_run_job(client, job):
     return S.JobResult(job.name,"ok",10,5) if job.name=="A" else S.JobResult(job.name,"skipped",0,0)
 S.run_job=skip_run_job
 c=Client(set(),"transient")
 run(c,"SSID","import",jobs=jobs,user="me@x.com",retry_window=0,sleep=lambda s: None)
-assert c.status["J2"] == "Success: 1 row(s) synced, 1 skipped", c.status["J2"]
+assert c.status["J2"] == "Import successful", c.status["J2"]
 print("  skipped     ->", c.status["J2"])
 
 S.run_job=fake_run_job
@@ -138,6 +138,14 @@ run(c,"SSID","import",jobs=jobs,user="me@x.com",attempt=4,max_attempts=4,
     retry_window=0,sleep=lambda s: None, timezone_name="Europe/Kyiv")
 assert c.status["J2"].startswith("Failed:"), c.status["J2"]
 print("  gave up     ->", c.status["J2"][:72])
+for m,expect in (("import","Import successful"),("export","Export successful"),
+                 ("database","Database import successful")):
+    S.run_job=ok_run_job
+    c=Client(set(),"transient")
+    run(c,"SSID",m,jobs=jobs,user="me@x.com",retry_window=0,sleep=lambda s: None)
+    cell="L2" if m=="database" else "J2"
+    assert c.status[cell]==expect, (m, c.status[cell])
+    print("  %-8s -> %s" % (m, c.status[cell]))
 print("PASS all states")
 
 S.run_job=orig

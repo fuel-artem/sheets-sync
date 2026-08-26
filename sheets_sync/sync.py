@@ -226,41 +226,30 @@ def _pass(client: SheetsClient, jobs: Dict[int, Any], results: Dict[int, JobResu
     return still_pending, last_transient
 
 
-# The two outcomes a finished run can report. "In progress" belongs to the Apps
-# Script, which writes it when it dispatches; by the time this module writes the
-# cell the run is over, and a run that did not sync everything has failed even if
-# it will try again by itself.
-STATUS_OK = "Success"
+# What a finished run reports. "In progress" belongs to the Apps Script, which
+# writes it when it dispatches; by the time this module writes the cell the run
+# is over.
 STATUS_FAILED = "Failed"
 
-
-def _success_detail(report: RunReport) -> str:
-    """Counts only. Nothing technical belongs in the cell when a run worked."""
-    if not report.results:
-        return ": nothing to sync"
-    synced = sum(1 for r in report.results if r.status == "ok")
-    skipped = sum(1 for r in report.results if r.status == "skipped")
-    detail = f": {synced} row(s) synced"
-    if skipped:
-        detail += f", {skipped} skipped"
-    return detail
-
+# Mirrors modeLabel_ in GithubTrigger.gs.
+MODE_LABEL = {"import": "Import", "export": "Export", "database": "Database import"}
 
 def _status_message(report: RunReport, retry_at: Optional[datetime], timezone_name: str) -> str:
     """
     What lands in the status cell.
 
-    Leads with Success or Failed so the state is readable at a glance, and
-    appends technical detail only when something went wrong. A deferred row is a
-    failure with a retry attached, not a third state: nothing synced, and saying
-    otherwise would have the cell report progress while rows sat unwritten.
+    A clean run says only that it worked - no counts, since one "row" means a
+    settings row for a copy but the whole rebuilt tab for the database import,
+    and a number that changes meaning by mode is worse than no number. Anything
+    that did not finish leads with Failed and carries the technical detail. A
+    deferred row is a failure with a retry attached, not a third state.
     """
     names = ", ".join(job.name for job in report.deferred) or "settings"
     retry_pending = bool(report.retry_request and retry_at is not None)
     gave_up = bool((report.deferred or report.reread_settings) and not retry_pending)
 
     if not report.error and not retry_pending and not gave_up:
-        return STATUS_OK + _success_detail(report)
+        return f"{MODE_LABEL.get(report.mode, 'Sync')} successful"
 
     details: List[str] = []
     if report.error:
