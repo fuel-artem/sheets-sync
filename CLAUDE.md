@@ -12,7 +12,13 @@ spreadsheet id, timezone, or database layout, and the workflow has no `cron:`. E
 arrives in the `workflow_dispatch` payload from Apps Script, and a retry reconstructs its
 inputs from the payload it received. If you are tempted to add `vars.SOMETHING` to avoid
 passing a value, that is the thing this design is avoiding. Scheduling therefore stays in the
-Apps Script time-driven trigger (`triggerImport` / `triggerExport` / `triggerDatabaseImport`).
+Apps Script time-driven trigger (`triggerImport` / `triggerExport`).
+
+There are two Apps Script files and a spreadsheet gets exactly one of them:
+`GithubTrigger.gs` for plain import/export, `GithubTriggerDatabase.gs` where the import *is*
+the rebuild (`manualImport` dispatches `mode: database`). They declare the same names on
+purpose, so existing button drawings keep working either way - which also means pasting both
+into one project fails on duplicate declarations.
 
 **Transient and permanent failures are never treated alike.** `errors.py` classifies every
 exception; only `TransientError` is retried, at three layers (per call in `retry.py`, per row
@@ -39,7 +45,10 @@ reason code re-breaks this.
 - **Reads use `UNFORMATTED_VALUE`** (matching `getValues()`), except the database tab which
   uses `FORMATTED_VALUE` (matching `getDisplayValues()`).
 - **Flag columns differ per mode and are not a typo**: export 5/6, import 6/7, database 7/8.
-  Status cells likewise: J2:J4, except the database variant at L2:L4.
+  Status cells likewise: J2:J4, except the database variant at `DatabaseConfig.status_cells`,
+  default L2:L4. On a database spreadsheet nothing writes Import Settings J2:J4 at all —
+  the rebuild uses L and the export writes to its own tab — so a value sitting in J2 there
+  is a leftover from the old script, not a status. It confused a real debugging session.
 
 ## Verifying a change without a spreadsheet
 
@@ -59,10 +68,13 @@ workflow): it lists the rows that would run and writes nothing.
 
 ## Open items
 
-1. **Deploy.** The repo has one local commit and has never been pushed — see `DEPLOY.md`.
+1. **Secrets.** The repo is pushed and private at `github.com/fuel-artem/sheets-sync`, but
+   `GCP_SA_KEY` and `RETRY_DISPATCH_TOKEN` are not set, so a run still fails at auth.
 2. **Convert `tests/` to pytest.** They are assert-and-print scripts today.
-3. **Unverified against production data.** No run has touched a real spreadsheet yet. The
-   database clear covers `A2` to the last column; if columns 38–42 hold live formulas rather
-   than values written elsewhere, that clear wipes them. Check on a copy first.
+3. **The rebuild has never completed.** A database run did reach a real spreadsheet and got
+   as far as resolving tabs, where it failed on the tab name, so credentials and dispatch
+   work. Nothing has yet written to a database tab. The clear covers `A2` to the last
+   column; if columns 38–42 hold live formulas rather than values written elsewhere, that
+   clear wipes them. Check on a copy first.
 4. **Retry waits burn runner minutes** (a retry run sleeps until `not_before`). If outages
    turn out to be frequent, the alternative is a queue branch plus a sweeper cron.

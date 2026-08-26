@@ -1,16 +1,19 @@
 /**
- * Fuel Sync - import and export.
+ * Fuel Sync - import and export, for a spreadsheet with a database tab.
+ *
+ * Same as GithubTrigger.gs with one difference: here "Import" means the
+ * database rebuild. It reads every enabled source off the Import Settings tab,
+ * enriches each transaction from the AI Settings handbook, and rewrites the
+ * database tab. There is no plain-copy import on this spreadsheet - the
+ * non-database rows of the settings tab are copied as part of the same run.
+ *
+ * Use this file or GithubTrigger.gs - never both in the same Apps Script
+ * project, because they declare the same names.
  *
  * The button no longer moves any data: it asks GitHub Actions to run
- * `sheets-sync.yml`, which reads the same Import/Export Settings tabs and
- * writes the status block back into J2:J4.
- *
- * This is the copy for a spreadsheet that has no database tab. The variant for
- * one that does is GithubTriggerDatabase.gs. Use one or the other - never both
- * in the same Apps Script project, because they declare the same names.
- *
- * Everything that says *where* to dispatch is a constant below. The only thing
- * left in Project Settings -> Script Properties is the credential:
+ * `sheets-sync.yml`. Everything that says *where* to dispatch is a constant
+ * below. The only thing left in Project Settings -> Script Properties is the
+ * credential:
  *   GITHUB_TOKEN  fine-grained PAT with "Actions: read and write" on the repo
  *
  * It stays a property rather than a constant because Apps Script source is
@@ -33,9 +36,6 @@ const SUPPORT_CONTACT = 'artemomelchenko@fuelfinance.me';
 const STATUS_FAILED = 'Failed';
 const STATUS_RUNNING = 'In progress';
 
-// Both tabs keep their status block in column J: state, timestamp, user.
-const STATUS_CELLS = ['J2', 'J3', 'J4'];
-
 // Pinned REST API version. GitHub currently supports '2026-03-10' and the older
 // '2022-11-28'. Only the dispatch POST is called and it answers 204 with no body,
 // so there is no response shape a version bump could break.
@@ -43,7 +43,32 @@ const GITHUB_API_VERSION = '2026-03-10';
 
 // true  -> the enabled rows are read here and sent in the payload
 // false -> only the spreadsheet id is sent and Python reads the tabs itself
+//
+// The rebuild is always assembled on the Python side, since it needs the AI
+// Settings handbook as well as the settings rows, so this only affects export.
 const SEND_JOBS_INLINE = false;
+
+// The database layout. This is the per-client part of the old script - the
+// `databaseLength` constant and the column layout around it. It travels with the
+// dispatch, so nothing about this spreadsheet is stored on the GitHub side.
+// Omit a key to keep the documented default.
+const DATABASE_CONFIG = {
+  transaction_length: 21,
+  keep_columns: 37,
+  trailing_blanks: 5,
+  trailing_new: 3,
+  database_tab: 'General database',
+  ai_tab: 'AI Settings',
+  ai_ranges: { cf: 'A3:G', pl: 'I3:O', bs: 'Q3:W' },
+  // Where this spreadsheet keeps the status block for the rebuild: state,
+  // timestamp, user. Both this script and the Python side read it from here,
+  // so there is one place to change if it ever moves. Note this is a different
+  // column from the export block, on a different tab.
+  status_cells: ['L2', 'L3', 'L4']
+};
+
+// The export tab keeps its status block in column J.
+const EXPORT_STATUS_CELLS = ['J2', 'J3', 'J4'];
 
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -53,9 +78,12 @@ function onOpen() {
     .addToUi();
 }
 
-/** Buttons keep their original names, so existing drawings stay wired up. */
+/**
+ * Buttons keep their original names, so existing drawings stay wired up.
+ * On this spreadsheet the import is the database rebuild.
+ */
 function manualImport() {
-  dispatchWorkflow_('import', 'manual');
+  dispatchWorkflow_('database', 'manual');
 }
 
 function manualExport() {
@@ -68,16 +96,24 @@ function manualExport() {
  * stored on the GitHub side.
  */
 function triggerImport() {
-  dispatchWorkflow_('import', 'trigger', true);
+  dispatchWorkflow_('database', 'trigger', true);
 }
 
 function triggerExport() {
   dispatchWorkflow_('export', 'trigger', true);
 }
 
-/** For messages people read. */
+/**
+ * For messages people read. The rebuild is an import as far as anyone reading
+ * the sheet is concerned; the cell it lands in is what tells the two apart.
+ */
 function modeLabel_(mode) {
   return mode === 'export' ? 'Export' : 'Import';
+}
+
+/** Which status block a mode writes to. */
+function statusCells_(mode) {
+  return mode === 'export' ? EXPORT_STATUS_CELLS : DATABASE_CONFIG.status_cells;
 }
 
 /**
@@ -124,7 +160,7 @@ function showAlert_(message) {
 /**
  * Send a workflow_dispatch request to GitHub.
  *
- * @param {string} mode - 'import' or 'export'
+ * @param {string} mode - 'database' (the import) or 'export'
  * @param {string} execution - 'manual' or 'trigger' (which checkbox column to use)
  * @param {boolean} [silent=false] - no UI alerts (for time-driven triggers)
  */
@@ -156,7 +192,9 @@ function dispatchWorkflow_(mode, execution, silent) {
     not_before: ''
   };
 
-  if (SEND_JOBS_INLINE) {
+  if (mode === 'database') {
+    inputs.database_config = JSON.stringify(DATABASE_CONFIG);
+  } else if (SEND_JOBS_INLINE) {
     inputs.jobs_json = JSON.stringify(collectJobs_(mode, execution));
   }
 
@@ -194,7 +232,7 @@ function dispatchWorkflow_(mode, execution, silent) {
   );
   if (!silent) {
     ss.toast(
-      modeLabel_(mode) + ' started. The result will appear in cell ' + STATUS_CELLS[0]
+      modeLabel_(mode) + ' started. The result will appear in cell ' + statusCells_(mode)[0]
         + ' in a few minutes - this sheet does not update instantly.',
       'Fuel Sync',
       8
@@ -209,28 +247,26 @@ function dispatchWorkflow_(mode, execution, silent) {
 function setSheetStatus_(mode, text, user) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const tab = mode === 'export' ? 'Export Settings' : 'Import Settings';
+  const cells = statusCells_(mode);
   const sheet = ss.getSheetByName(tab);
   if (!sheet) return;
-  sheet.getRange(STATUS_CELLS[0]).setValue(text);
+  sheet.getRange(cells[0]).setValue(text);
   // Always stamped, so a failure never sits under a stale time.
-  sheet.getRange(STATUS_CELLS[1]).setValue(
+  sheet.getRange(cells[1]).setValue(
     Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'MM/dd/yyyy HH:mm:ss')
   );
-  sheet.getRange(STATUS_CELLS[2]).setValue(user || '');
+  sheet.getRange(cells[2]).setValue(user || '');
 }
 
 /**
- * Read the enabled rows, used only when SEND_JOBS_INLINE is true.
- * Column layout: A name | B from URL | C from range | D to URL | E to range | F..H flags
+ * Read the enabled export rows, used only when SEND_JOBS_INLINE is true. The
+ * rebuild never comes through here, so only the export flag columns matter.
+ * Column layout: A name | B from URL | C from range | D to URL | E to range | F..G flags
  */
 function collectJobs_(mode, execution) {
-  const tab = mode === 'export' ? 'Export Settings' : 'Import Settings';
-  const flagIndex =
-    mode === 'import'
-      ? (execution === 'trigger' ? 6 : 7)
-      : (execution === 'trigger' ? 5 : 6);
+  const flagIndex = execution === 'trigger' ? 5 : 6;
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(tab);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Export Settings');
   const rows = sheet
     .getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
     .getValues()

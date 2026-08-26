@@ -40,9 +40,17 @@ Viewer is enough on sources. This is the usual cause of a first-run `permissionD
 
 ## 4. The sheet
 
-Copy `apps_script/GithubTrigger.gs` into the spreadsheet's Apps Script project, replacing the
-old `Import.gs` / `Export.gs`. The entry points are still named `manualImport`,
-`manualExport`, so existing button drawings stay wired; `manualDatabaseImport` is new.
+Copy **one** of the two Apps Script files into the spreadsheet's project, replacing the old
+`Import.gs` / `Export.gs`:
+
+| Spreadsheet | File | What "Run Import" does |
+|---|---|---|
+| no database tab | `apps_script/GithubTrigger.gs` | copies the enabled Import Settings rows |
+| has one | `apps_script/GithubTriggerDatabase.gs` | rebuilds the database tab, then copies the non-database rows |
+
+Never both in one project - they declare the same names, and Apps Script fails on the
+duplicate. The entry points are `manualImport` / `manualExport` in either file, so existing
+button drawings stay wired.
 
 At the top of the file set `GITHUB_OWNER`, `GITHUB_REPO`, `GIT_REF`, and — for a
 database-import spreadsheet — the `DATABASE_CONFIG` object, which is where the old
@@ -52,8 +60,7 @@ Then Project Settings → Script Properties → `GITHUB_TOKEN`: a fine-grained P
 **Actions: read and write** on the repo.
 
 Finally, delete the old Apps Script time-driven triggers and point new ones at
-`triggerImport` / `triggerExport` / `triggerDatabaseImport` so the schedule and the button
-take the same path.
+`triggerImport` / `triggerExport` so the schedule and the button take the same path.
 
 ## 5. First run, safely
 

@@ -5,7 +5,7 @@ exactly where they are; the copying moves from Apps Script to GitHub Actions, an
 button becomes a `workflow_dispatch` call.
 
 ```
-Sheet button (GithubTrigger.gs) ──POST──▶ GitHub Actions ──▶ python -m sheets_sync
+Sheet button (Apps Script)  ──POST──▶ GitHub Actions ──▶ python -m sheets_sync
                                                               ├─ reads Import/Export Settings
                                                               ├─ copies each enabled row
                                                               └─ writes J2:J4 back
@@ -82,10 +82,13 @@ not start new workflow runs. The same fine-grained PAT the sheet uses works here
 
 **3. The button**
 
-Replace the old `Import.gs` / `Export.gs` with `apps_script/GithubTrigger.gs`. Set
+Replace the old `Import.gs` / `Export.gs` with **one** of `apps_script/GithubTrigger.gs`
+(plain import/export) or `apps_script/GithubTriggerDatabase.gs` (where "Run Import" is the
+database rebuild). Never both in one project: they declare the same names, which is what
+keeps the button drawings wired, and Apps Script rejects the duplicates. Set
 `SUPPORT_CONTACT` at the top of the file: it is named in every alert a button can raise,
 since the people clicking those buttons cannot open a private repository. Keep the
-existing drawings — the entry points are still called `manualImport` / `manualExport`.
+existing drawings — the entry points are called `manualImport` / `manualExport` in both.
 Then set `GITHUB_TOKEN` in Script Properties: a fine-grained PAT scoped to this repo with
 **Actions: read and write**. Adjust `GITHUB_OWNER`, `GITHUB_REPO`, `GIT_REF` at the top of
 the file.
@@ -137,7 +140,7 @@ Exit codes: `0` clean or retry scheduled, `1` permanent failure, `2` bad usage,
 6. clear from A2, write the result, restore the filter.
 
 The layout is a `DatabaseConfig`, sent as `database_config` in the dispatch payload — the Apps
-Script holds it in one object at the top of `GithubTrigger.gs`, where the original kept
+Script holds it in one object at the top of `GithubTriggerDatabase.gs`, where the original kept
 `const databaseLength = 21`. Nothing about the spreadsheet lives on the GitHub side.
 
 Details that are easy to get wrong, and are covered by tests:
@@ -264,5 +267,6 @@ sheets_sync/sync.py      the port of insteadImportOptional / insteadExportOption
 sheets_sync/database.py  the database rebuild + AI Settings handbook
 sheets_sync/__main__.py  CLI
 .github/workflows/sheets-sync.yml
-apps_script/GithubTrigger.gs
+apps_script/GithubTrigger.gs          the sheet button: import / export
+apps_script/GithubTriggerDatabase.gs  the same, where import = the database rebuild
 ```
