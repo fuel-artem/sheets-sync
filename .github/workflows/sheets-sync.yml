@@ -20,6 +20,10 @@ on:
       settings_spreadsheet_id:
         description: "Spreadsheet holding the Import/Export Settings tabs"
         required: true
+      settings_tab:
+        description: "Name of the settings tab; blank uses Import/Export Settings"
+        required: false
+        default: ""
       requested_by:
         description: "Email written to the status block (J4)"
         required: false
@@ -96,6 +100,7 @@ jobs:
           SS_MODE: ${{ inputs.mode }}
           SS_EXECUTION: ${{ inputs.execution }}
           SS_SPREADSHEET_ID: ${{ inputs.settings_spreadsheet_id }}
+          SS_SETTINGS_TAB: ${{ inputs.settings_tab }}
           SS_REQUESTED_BY: ${{ inputs.requested_by }}
           SS_TIMEZONE: ${{ inputs.timezone || 'UTC' }}
           SS_JOBS_JSON: ${{ inputs.jobs_json }}
@@ -109,6 +114,7 @@ jobs:
             --mode "$SS_MODE" \
             --execution "$SS_EXECUTION" \
             --settings-spreadsheet-id "$SS_SPREADSHEET_ID" \
+            --settings-tab "$SS_SETTINGS_TAB" \
             --user "$SS_REQUESTED_BY" \
             --timezone "$SS_TIMEZONE" \
             --jobs-json "$SS_JOBS_JSON" \

@@ -25,6 +25,10 @@ const STATUS_RUNNING = 'In progress';
 // Both tabs keep their status block in column J: state, timestamp, user.
 const STATUS_CELLS = ['J2', 'J3', 'J4'];
 
+// The settings tabs on this spreadsheet. Sent with the dispatch, so the name
+// is written down here and nowhere else.
+const SETTINGS_TABS = { import: 'Import Settings', export: 'Export Settings' };
+
 // 2026-03-10 answers the dispatch 200 with a body; 2022-11-28 answered 204 with
 // none. Hence the 2xx check below rather than a literal status.
 const GITHUB_API_VERSION = '2026-03-10';
@@ -57,6 +61,11 @@ function triggerImport() {
 
 function triggerExport() {
   dispatchWorkflow_('export', 'trigger', true);
+}
+
+/** Which settings tab a mode reads. */
+function settingsTab_(mode) {
+  return mode === 'export' ? SETTINGS_TABS.export : SETTINGS_TABS.import;
 }
 
 /** For messages people read. */
@@ -129,6 +138,7 @@ function dispatchWorkflow_(mode, execution, silent) {
     mode: mode,
     execution: execution,
     settings_spreadsheet_id: ss.getId(),
+    settings_tab: settingsTab_(mode),
     requested_by: email || 'sheet button',
     timezone: ss.getSpreadsheetTimeZone(),
     attempt: '1',
@@ -192,8 +202,7 @@ function dispatchWorkflow_(mode, execution, silent) {
 /** State, time, and who asked. The workflow overwrites all three when it finishes. */
 function setSheetStatus_(mode, text, user) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const tab = mode === 'export' ? 'Export Settings' : 'Import Settings';
-  const sheet = ss.getSheetByName(tab);
+  const sheet = ss.getSheetByName(settingsTab_(mode));
   if (!sheet) return;
   sheet.getRange(STATUS_CELLS[0]).setValue(text);
   sheet.getRange(STATUS_CELLS[1]).setValue(
@@ -207,7 +216,7 @@ function setSheetStatus_(mode, text, user) {
  * Column layout: A name | B from URL | C from range | D to URL | E to range | F..H flags
  */
 function collectJobs_(mode, execution) {
-  const tab = mode === 'export' ? 'Export Settings' : 'Import Settings';
+  const tab = settingsTab_(mode);
   const flagIndex =
     mode === 'import'
       ? (execution === 'trigger' ? 6 : 7)

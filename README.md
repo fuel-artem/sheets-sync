@@ -47,6 +47,10 @@ The flag columns differ by one between the two tabs because the original scripts
 URLs must contain both the spreadsheet id and `#gid=`, exactly as before. Ranges are plain A1
 (`A2:H`, `A1:C10`, `A2`); a `'Tab name'!A2:H` prefix is also accepted and wins over the gid.
 
+The tab names themselves arrive in the dispatch as `settings_tab`, from `SETTINGS_TABS` in
+the Apps Script — the only place they are written down. Blank falls back to
+`settings.TAB`, so `Import Settings` / `Export Settings` still work unchanged.
+
 Status block per tab: **J2** error, **J3** timestamp, **J4** user — except the database
 variant, which uses **L2/L3/L4**, matching its Apps Script.
 
@@ -117,7 +121,8 @@ python -m sheets_sync --mode export --execution trigger \
 
 Useful flags: `--no-status` (leave J2:J4 alone), `--jobs-json` (run an inline job list instead
 of the tab), `--run-url-cell J5` (write the Actions run link next to the status block),
-`--flag-column N`, `--retry-window-minutes`, `--max-attempts`, `--call-attempts`, `-v`.
+`--flag-column N`, `--settings-tab`, `--retry-window-minutes`, `--max-attempts`,
+`--call-attempts`, `-v`.
 
 Exit codes: `0` clean or retry scheduled, `1` permanent failure, `2` bad usage,
 `75` transient but out of attempts.

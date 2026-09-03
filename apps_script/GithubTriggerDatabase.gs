@@ -48,6 +48,10 @@ const DATABASE_CONFIG = {
 // The export tab keeps its status block in column J.
 const EXPORT_STATUS_CELLS = ['J2', 'J3', 'J4'];
 
+// The settings tabs on this spreadsheet. Sent with the dispatch, so the name
+// is written down here and nowhere else. The rebuild reads the import tab.
+const SETTINGS_TABS = { database: 'Import Settings', export: 'Export Settings' };
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Fuel Sync')
@@ -72,6 +76,11 @@ function triggerImport() {
 
 function triggerExport() {
   dispatchWorkflow_('export', 'trigger', true);
+}
+
+/** Which settings tab a mode reads. */
+function settingsTab_(mode) {
+  return mode === 'export' ? SETTINGS_TABS.export : SETTINGS_TABS.database;
 }
 
 /** The rebuild reads as "Import"; the cell it lands in tells them apart. */
@@ -149,6 +158,7 @@ function dispatchWorkflow_(mode, execution, silent) {
     mode: mode,
     execution: execution,
     settings_spreadsheet_id: ss.getId(),
+    settings_tab: settingsTab_(mode),
     requested_by: email || 'sheet button',
     timezone: ss.getSpreadsheetTimeZone(),
     attempt: '1',
@@ -214,9 +224,8 @@ function dispatchWorkflow_(mode, execution, silent) {
 /** State, time, and who asked. The workflow overwrites all three when it finishes. */
 function setSheetStatus_(mode, text, user) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const tab = mode === 'export' ? 'Export Settings' : 'Import Settings';
   const cells = statusCells_(mode);
-  const sheet = ss.getSheetByName(tab);
+  const sheet = ss.getSheetByName(settingsTab_(mode));
   if (!sheet) return;
   sheet.getRange(cells[0]).setValue(text);
   sheet.getRange(cells[1]).setValue(
@@ -232,7 +241,7 @@ function setSheetStatus_(mode, text, user) {
 function collectJobs_(mode, execution) {
   const flagIndex = execution === 'trigger' ? 5 : 6;
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Export Settings');
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SETTINGS_TABS.export);
   const rows = sheet
     .getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
     .getValues()

@@ -433,15 +433,16 @@ def read_database_settings(
     settings_spreadsheet_id: str,
     execution: str,
     config: DatabaseConfig,
-    tab: str = "Import Settings",
+    tab: Optional[str] = None,
     flag_column: Optional[int] = None,
 ) -> List[Any]:
     """Read the Import Settings tab of a database-import spreadsheet.
 
     The rebuild comes first (if any source feeds it), then the plain copy rows.
     """
-    from .settings import FLAG_COLUMN
+    from .settings import FLAG_COLUMN, TAB
 
+    tab = tab or TAB["database"]
     index = FLAG_COLUMN[("database", execution)] if flag_column is None else flag_column
     rows = client.get_values(settings_spreadsheet_id, with_sheet_title("A2:Z", tab)) or []
 

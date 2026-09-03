@@ -292,6 +292,7 @@ def run(
     run_url_cell: Optional[str] = None,
     update_status: bool = True,
     status_cells: Optional[Sequence[str]] = None,
+    settings_tab: Optional[str] = None,
     attempt: int = 1,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     retry_window: float = DEFAULT_RETRY_WINDOW,
@@ -312,10 +313,14 @@ def run(
                     settings_spreadsheet_id,
                     execution,
                     database_config or DatabaseConfig(),
+                    tab=settings_tab,
                     flag_column=flag_column,
                 )
             else:
-                jobs = read_jobs(client, settings_spreadsheet_id, mode, execution, flag_column)
+                jobs = read_jobs(
+                    client, settings_spreadsheet_id, mode, execution, flag_column,
+                    tab=settings_tab,
+                )
         except Exception as exc:  # noqa: BLE001
             error = classify(exc)
             if isinstance(error, TransientError):
@@ -373,6 +378,7 @@ def run(
                 # Everything the run needs comes from the original dispatch;
                 # nothing is read from repository defaults.
                 "settings_spreadsheet_id": settings_spreadsheet_id,
+                "settings_tab": settings_tab or "",
                 "requested_by": user,
                 "timezone": timezone_name,
                 "database_config": json.dumps(database_config.to_dict())
@@ -403,6 +409,7 @@ def run(
                 # cells from the config that arrived in the dispatch payload.
                 status_cells=status_cells
                 or (database_config.status_cells if (mode == "database" and database_config) else None),
+                tab=settings_tab,
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("Could not write the status block: %s", classify(exc))

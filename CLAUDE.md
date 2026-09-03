@@ -7,7 +7,8 @@ part that is not obvious from reading the code.
 
 ## Two rules that shaped the design
 
-**Nothing about *what* to sync lives on the GitHub side.** No repository variable holds a
+**Nothing about *what* to sync lives on the GitHub side.** That now includes the settings
+tab names, which arrive as `settings_tab`; `settings.TAB` is only a fallback for a blank one. No repository variable holds a
 spreadsheet id, timezone, or database layout, and the workflow has no `cron:`. Every parameter
 arrives in the `workflow_dispatch` payload from Apps Script, and a retry reconstructs its
 inputs from the payload it received. If you are tempted to add `vars.SOMETHING` to avoid

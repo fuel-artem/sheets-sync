@@ -35,3 +35,28 @@ f=Fake(src=None); f.src=None; print(run_job(f, SyncJob("t4",SRC,"A2:E",DST,"A2")
 
 print("-- jagged source")
 f=Fake(src=[[1,2,3],[1],[1,2]]); print(run_job(f, SyncJob("t5",SRC,"A2:C",DST,"A2")), *f.calls, sep="\n  ")
+
+print()
+print("== the settings tab name comes from the dispatch ==")
+import sheets_sync.sync as _S
+from sheets_sync.settings import read_jobs, write_status, TAB
+from sheets_sync.database import read_database_settings, DatabaseConfig
+ROW=[["Bank","https://docs.google.com/spreadsheets/d/S/edit#gid=0","A2:H",
+      "https://docs.google.com/spreadsheets/d/D/edit#gid=1","A2","","",True,True,21]]
+class TabClient:
+    policy=None
+    def __init__(self): self.reads=[]; self.writes=[]
+    def get_values(self, ss, a1, **k): self.reads.append(a1); return ROW
+    def batch_set_values(self, ss, data): self.writes += [d["range"] for d in data]
+
+# Blank falls back to the built-in name, so an old dispatch keeps working.
+c=TabClient(); read_jobs(c,"SSID","import","manual")
+assert c.reads[0]=="'Import Settings'!A2:Z", c.reads[0]
+c=TabClient(); read_jobs(c,"SSID","import","manual",None,tab="Renamed")
+assert c.reads[0]=="'Renamed'!A2:Z", c.reads[0]
+c=TabClient(); read_database_settings(c,"SSID","manual",DatabaseConfig(),tab="Renamed")
+assert c.reads[0]=="'Renamed'!A2:Z", c.reads[0]
+c=TabClient(); write_status(c,"SSID","import",None,"me","ok",tab="Renamed")
+assert all(w.startswith("'Renamed'!") for w in c.writes), c.writes
+print("  read/write both honour it; blank falls back to", repr(TAB["import"]))
+print("PASS settings tab")

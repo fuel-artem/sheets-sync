@@ -14,7 +14,8 @@ from .client import SheetsClient
 
 log = logging.getLogger(__name__)
 
-# Tab names, unchanged from the Apps Script version.
+# Fallback tab names. The sheet sends its own in the dispatch payload, since
+# they are spreadsheet-specific like everything else about the layout.
 TAB = {
     "import": "Import Settings",
     "export": "Export Settings",
@@ -81,9 +82,10 @@ def read_jobs(
     mode: str,
     execution: str,
     flag_column: Optional[int] = None,
+    tab: Optional[str] = None,
 ) -> List[SyncJob]:
     """Return the enabled rows of the Import/Export Settings tab, in sheet order."""
-    tab = TAB[mode]
+    tab = tab or TAB[mode]
     index = FLAG_COLUMN[(mode, execution)] if flag_column is None else flag_column
 
     rows = client.get_values(settings_spreadsheet_id, with_sheet_title("A2:Z", tab)) or []
@@ -123,13 +125,14 @@ def write_status(
     run_url_cell: Optional[str] = None,
     run_url: str = "",
     status_cells: Optional[Sequence[str]] = None,
+    tab: Optional[str] = None,
 ) -> None:
     """Write the status block, same as statusImportUpdate/statusExportUpdate.
 
     ``status_cells`` overrides the per-mode default; the database variant sends
     its own in the dispatch payload.
     """
-    tab = TAB[mode]
+    tab = tab or TAB[mode]
     status_cell, date_cell, user_cell = tuple(status_cells or STATUS_CELLS[mode])
     formatted = ""
     if when is not None:

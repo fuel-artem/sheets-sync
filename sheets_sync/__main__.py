@@ -145,6 +145,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     p.add_argument(
+        "--settings-tab",
+        default="",
+        help="Name of the settings tab; sent by the sheet (default: Import/Export Settings)",
+    )
+    p.add_argument(
         "--status-cells",
         default="",
         help="Override the status block cells, e.g. J2,J3,J4 (error, timestamp, user)",
@@ -238,6 +243,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     args.settings_spreadsheet_id,
                     args.execution,
                     database_config,
+                    tab=args.settings_tab or None,
                     flag_column=args.flag_column,
                 )
                 if args.mode == "database"
@@ -247,6 +253,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     args.mode,
                     args.execution,
                     args.flag_column,
+                    tab=args.settings_tab or None,
                 )
             )
         for job in jobs:
@@ -270,6 +277,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         max_attempts=args.max_attempts,
         retry_window=args.retry_window_minutes * 60,
         status_cells=status_cells,
+        settings_tab=args.settings_tab or None,
     )
 
     for result in report.results:
