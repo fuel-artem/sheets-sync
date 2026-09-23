@@ -1,9 +1,7 @@
-__pycache__/
-*.py[cod]
-.venv/
-venv/
+node_modules/
+.clasp.json
+.clasprc.json
 *.json.key
 sa.json
 service-account*.json
-retry.json
 .DS_Store

@@ -1,0 +1,12 @@
+{
+  "name": "fuel-sync",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "push": "clasp push",
+    "deploy": "clasp push && clasp version"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.0.0"
+  }
+}

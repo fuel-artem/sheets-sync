@@ -1,74 +1,58 @@
 # Deploying
 
-The repo is committed locally but has never been pushed. Everything below runs on your
-machine, with your credentials.
-
-## 1. Create the repo and push
+## 1. The library project (once)
 
 ```bash
-# already done: the repo lives at github.com/fuel-artem/sheets-sync (private)
-gh repo create fuel-artem/sheets-sync --private --source=. --push
-
-# or, without gh
-git remote add origin git@github.com:fuel-artem/sheets-sync.git
-git push -u origin main
+npm install
+npx clasp login
+npx clasp create --type standalone --title "Fuel Sync" --rootDir src
+npm run deploy     # pushes src/ and cuts version 1
 ```
 
-`workflow_dispatch` only appears once the workflow file is on the default branch, so push to
-`main` first.
+`clasp create` writes `.clasp.json` (git-ignored; `.clasp.json.example` shows its shape).
+Keep the project in the Fuel account, not a personal one: including projects need at least
+view access to it, so share it with whoever maintains the client spreadsheets.
 
-## 2. Secrets
+Then in the library project: **Project Settings → Script Properties → `GCP_SA_KEY`**, the whole
+service-account JSON. Library Script Properties are shared by every including project, so this
+is the only place the key is set. The Sheets API must be enabled on the key's Cloud project.
 
-Settings → Secrets and variables → Actions:
+Copy the **Script ID** from Project Settings; each spreadsheet needs it.
 
-| Kind | Name | Value |
-|---|---|---|
-| Secret | `GCP_SA_KEY` | the whole service-account JSON |
-| Secret | `RETRY_DISPATCH_TOKEN` | fine-grained PAT, this repo, **Actions: read and write** |
-| Variable | `MAX_WAIT_MINUTES` | optional, caps how long a retry run sleeps (default 120) |
-
-`RETRY_DISPATCH_TOKEN` is separate from the built-in `GITHUB_TOKEN` because events created
-with the built-in token do not start new workflow runs — without it, a deferred sync never
-gets its retry.
-
-No variable holds a spreadsheet id. That is deliberate; see `CLAUDE.md`.
-
-## 3. Google access
+## 2. Google access
 
 Share every source and target spreadsheet with the service account email — Editor on targets,
-Viewer is enough on sources. This is the usual cause of a first-run `permissionDenied`.
+Viewer is enough on sources — and Editor on each settings spreadsheet, since the status block
+is written through the API too. This is the usual cause of a first-run `permissionDenied`.
 
-## 4. The sheet
+## 3. Each spreadsheet
 
-Copy **one** of the two Apps Script files into the spreadsheet's project, replacing the old
-`Import.gs` / `Export.gs`:
+In the spreadsheet's Apps Script project:
 
-| Spreadsheet | File | What "Run Import" does |
-|---|---|---|
-| no database tab | `apps_script/GithubTrigger.gs` | copies the enabled Import Settings rows |
-| has one | `apps_script/GithubTriggerDatabase.gs` | rebuilds the database tab, then copies the non-database rows |
+1. Delete the old `Import.gs` / `Export.gs`, or `GithubTrigger.gs` / `GithubTriggerDatabase.gs`.
+2. Add **one** stub: `templates/FuelSync.js`, or `templates/FuelSyncDatabase.js` for a
+   spreadsheet whose import is the database rebuild. Set the tab names and, for the database
+   stub, `DATABASE_CONFIG` at the top.
+3. Add the library: **Libraries → +**, the Script ID, identifier `FuelSync`, the latest version.
+   Or merge `dependencies` and `oauthScopes` from `templates/appsscript.json` into the
+   project's manifest.
+4. Remove `GITHUB_TOKEN` from Script Properties; nothing reads it any more.
+5. Run `manualImport` once from the editor to grant the permissions.
 
-Never both in one project - they declare the same names, and Apps Script fails on the
-duplicate. The entry points are `manualImport` / `manualExport` in either file, so existing
-button drawings stay wired.
+Existing button drawings keep working: the stubs keep `manualImport` / `manualExport`.
+Existing time-driven triggers keep working if they point at `triggerImport` / `triggerExport`.
 
-At the top of the file set `GITHUB_OWNER`, `GITHUB_REPO`, `GIT_REF`, and — for a
-database-import spreadsheet — the `DATABASE_CONFIG` object, which is where the old
-`const databaseLength = 21` now lives.
+## 4. First run, safely
 
-Then Project Settings → Script Properties → `GITHUB_TOKEN`: a fine-grained PAT with
-**Actions: read and write** on the repo.
-
-Finally, delete the old Apps Script time-driven triggers and point new ones at
-`triggerImport` / `triggerExport` so the schedule and the button take the same path.
-
-## 5. First run, safely
-
-Run it from the Actions tab, not the sheet, with **`dry_run: true`** and a real
-`settings_spreadsheet_id`. It lists the rows it would sync and writes nothing — no clear, no
-status block. Read the run summary, then repeat with `dry_run: false` on a **copy** of the
-spreadsheet before pointing it at the live one.
+From the editor, run `fuelSyncDryRun`. It logs the rows an import would sync and writes
+nothing. Then run the real thing on a **copy** of the spreadsheet before the live one.
 
 For the database mode in particular, confirm on that copy that columns 38–42 of
 `General database` come back the way you expect: the rebuild clears from `A2` to the last
-column, matching the original script.
+column, matching the original script. **The rebuild has never completed against a real
+spreadsheet.**
+
+## Releasing a change
+
+`npm test`, then `npm run deploy`. Including projects stay on the version they chose until it
+is bumped in their Libraries panel, so a new version reaches no spreadsheet by itself.

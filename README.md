@@ -1,15 +1,21 @@
-# sheets-sync
+# Fuel Sync
 
-Python port of the Fuel Finance Apps Script import/export runner. The Settings tabs stay
-exactly where they are; the copying moves from Apps Script to GitHub Actions, and the sheet
-button becomes a `workflow_dispatch` call.
+An Apps Script library that runs the Fuel Finance Import, Export and Database-import syncs
+between spreadsheets. Each spreadsheet includes the library and keeps a small stub that
+describes its own layout; the library reads the Settings tabs, copies the ranges through the
+Sheets REST API as a service account, and writes the status block back.
 
 ```
-Sheet button (Apps Script)  ──POST──▶ GitHub Actions ──▶ python -m sheets_sync
-                                                              ├─ reads Import/Export Settings
-                                                              ├─ copies each enabled row
-                                                              └─ writes J2:J4 back
+Sheet button / time trigger ──▶ stub (templates/) ──▶ FuelSync.run(options)
+                                                        ├─ reads Import/Export Settings
+                                                        ├─ copies each enabled row  (Sheets API v4, service account)
+                                                        ├─ writes J2:J4 (L2:L4 for the rebuild)
+                                                        └─ on a transient failure: a one-off trigger ──▶ fuelSyncResume
 ```
+
+The copying goes through the REST API with a service-account token, not `SpreadsheetApp`:
+one values call moves a whole block where the native service is far slower on large
+ranges, and every sheet is shared with the one account rather than with whoever clicked.
 
 ## The three modes
 
@@ -21,7 +27,7 @@ Sheet button (Apps Script)  ──POST──▶ GitHub Actions ──▶ python 
 
 ## Layout it expects
 
-Unchanged from the Apps Script version:
+Unchanged from the original scripts:
 
 | Col | A | B | C | D | E | F | G | H |
 |---|---|---|---|---|---|---|---|---|
@@ -40,99 +46,46 @@ column G decides whether a row feeds the database or is an ordinary copy; column
 how many columns the source transaction has, and a value above `transaction_length` stops the
 run, as in the original.
 
-The flag columns differ by one between the two tabs because the original scripts used
-`trigger ? 5 : 6` for export and `trigger ? 6 : 7` for import. That is preserved in
-`settings.FLAG_COLUMN`, and `--flag-column` overrides it if you ever align the two.
+The flag columns differ by one between the tabs because the original scripts used
+`trigger ? 5 : 6` for export and `trigger ? 6 : 7` for import; `FLAG_COLUMN` in
+`src/Settings.js` preserves that.
 
 URLs must contain both the spreadsheet id and `#gid=`, exactly as before. Ranges are plain A1
 (`A2:H`, `A1:C10`, `A2`); a `'Tab name'!A2:H` prefix is also accepted and wins over the gid.
 
-The tab names themselves arrive in the dispatch as `settings_tab`, from `SETTINGS_TABS` in
-the Apps Script — the only place they are written down. Blank falls back to
-`settings.TAB`, so `Import Settings` / `Export Settings` still work unchanged.
+Status block: **J2** state, **J3** timestamp, **J4** user — except the database rebuild, which
+uses `DATABASE_CONFIG.status_cells`, default **L2/L3/L4**. A rebuild and a plain import share
+the same tab and write to different columns, so J2 after a rebuild shows the previous import.
 
-Status block per tab: **J2** error, **J3** timestamp, **J4** user — except the database
-variant, which uses **L2/L3/L4**, matching its Apps Script.
+## What lives where
 
-The database variant's cells are `status_cells` in `DatabaseConfig`, so they travel in the
-dispatch payload with the rest of the layout; `DATABASE_CONFIG.status_cells` in the Apps
-Script is the single place that sets them, and `--status-cells J2,J3,J4` overrides them for
-any mode. Worth knowing that a database run and a plain import share the *same tab* and
-write to *different columns*, so checking J2 after a database run shows the previous
-import's status, not this run's.
+**The library** holds the code and, in its Script Properties, `GCP_SA_KEY` — the whole
+service-account JSON. Library Script Properties are shared by every including project, so the
+key is set once and rotated once, and no client project ever holds it.
 
-## Setup
+**The stub** in each spreadsheet holds everything about that spreadsheet: the settings tab
+names, the status cells, and for a database spreadsheet the `DATABASE_CONFIG` layout. Nothing
+about any one spreadsheet lives in the library. There are two stubs and a spreadsheet gets
+exactly one:
 
-**1. Service account**
-
-Create one in Google Cloud, enable the Sheets API, download the JSON key, and share every
-source and target spreadsheet with the service account email (Editor on targets, Viewer is
-enough on sources).
-
-**2. Repository secrets**
-
-Credentials only. No repository variable holds a spreadsheet id, a timezone, or anything else
-that says *what* to sync — all of that arrives in the dispatch payload from Apps Script, so a
-run that nobody started has nothing to act on.
-
-| Kind | Name | Value |
+| Spreadsheet | Stub | What "Run Import" does |
 |---|---|---|
-| Secret | `GCP_SA_KEY` | the whole service-account JSON |
-| Secret | `RETRY_DISPATCH_TOKEN` | PAT used to schedule a retry (see below); optional |
-| Variable | `MAX_WAIT_MINUTES` | optional cap on how long a retry run may sleep, default 120 |
+| no database tab | `templates/FuelSync.js` | copies the enabled Import Settings rows |
+| has one | `templates/FuelSyncDatabase.js` | rebuilds the database tab, then copies the non-database rows |
 
-`RETRY_DISPATCH_TOKEN` is needed because events created with the built-in `GITHUB_TOKEN` do
-not start new workflow runs. The same fine-grained PAT the sheet uses works here.
+They declare the same names on purpose, so existing button drawings (`manualImport`,
+`manualExport`) and time triggers (`triggerImport`, `triggerExport`) keep working either way —
+which also means pasting both into one project fails on duplicate declarations. Each stub also
+declares `fuelSyncResume`, the function a scheduled retry calls.
 
-**3. The button**
-
-Replace the old `Import.gs` / `Export.gs` with **one** of `apps_script/GithubTrigger.gs`
-(plain import/export) or `apps_script/GithubTriggerDatabase.gs` (where "Run Import" is the
-database rebuild). Never both in one project: they declare the same names, which is what
-keeps the button drawings wired, and Apps Script rejects the duplicates. Set
-`SUPPORT_CONTACT` at the top of the file: it is named in every alert a button can raise,
-since the people clicking those buttons cannot open a private repository. Keep the
-existing drawings — the entry points are called `manualImport` / `manualExport` in both.
-Then set `GITHUB_TOKEN` in Script Properties: a fine-grained PAT scoped to this repo with
-**Actions: read and write**. Adjust `GITHUB_OWNER`, `GITHUB_REPO`, `GIT_REF` at the top of
-the file.
-
-**4. The schedule**
-
-Keep the Apps Script time-driven trigger, pointed at `triggerImport` / `triggerExport`. It
-dispatches with `execution: trigger`, which is what selects the trigger checkbox column. The
-workflow has no `cron:` on purpose — a scheduled GitHub run would need a spreadsheet id stored
-on the GitHub side, which is exactly what we are avoiding.
-
-## Running it locally
-
-```bash
-pip install -r requirements.txt
-export GOOGLE_APPLICATION_CREDENTIALS=./sa.json
-
-python -m sheets_sync --mode import --execution manual \
-  --settings-spreadsheet-id 1AbC... --dry-run     # list the rows that would run
-
-python -m sheets_sync --mode export --execution trigger \
-  --settings-spreadsheet-id 1AbC... --user you@fuel.finance
-```
-
-`--settings-spreadsheet-id` is required; there is no environment default worth relying on.
-
-Useful flags: `--no-status` (leave J2:J4 alone), `--jobs-json` (run an inline job list instead
-of the tab), `--run-url-cell J5` (write the Actions run link next to the status block),
-`--flag-column N`, `--settings-tab`, `--retry-window-minutes`, `--max-attempts`,
-`--call-attempts`, `-v`.
-
-Exit codes: `0` clean or retry scheduled, `1` permanent failure, `2` bad usage,
-`75` transient but out of attempts.
+`DEPLOY.md` has the setup.
 
 ## The database import
 
-`database.py` rebuilds the whole tab rather than copying a range:
+`src/Database.js` rebuilds the whole tab rather than copying a range:
 
-0. resolve where the database lives: **column D of the database rows**. The database tab
-   and `AI Settings` sit in that spreadsheet, which is usually not the one holding Import
+0. resolve where the database lives: **column D of the database rows**. The database tab and
+   `AI Settings` sit in that spreadsheet, which is usually not the one holding Import
    Settings. A `#gid=` in the url picks the tab and beats `database_tab`, which is only a
    fallback for a blank column D (meaning "in the settings spreadsheet");
 1. read the CF / P&L / BS handbooks from `AI Settings` (`A3:G`, `I3:O`, `Q3:W`), keyed on
@@ -148,147 +101,112 @@ Exit codes: `0` clean or retry scheduled, `1` permanent failure, `2` bad usage,
    category or with none of the three dates;
 6. clear from A2, write the result, restore the filter.
 
-The layout is a `DatabaseConfig`, sent as `database_config` in the dispatch payload — the Apps
-Script holds it in one object at the top of `GithubTriggerDatabase.gs`, where the original kept
-`const databaseLength = 21`. Nothing about the spreadsheet lives on the GitHub side.
-
 Details that are easy to get wrong, and are covered by tests:
 
-- **`js_parse_float` mimics JavaScript.** The database is read as display values, so an amount
-  can arrive as `1,234.56`. JS `parseFloat` returns `1` and the original kept the row; Python's
-  `float()` would raise and quietly change which rows survive.
+- **Amounts go through `parseFloat`, not `Number`.** The database is read as display values,
+  so an amount can arrive as `1,234.56`; `parseFloat` returns `1` and the original kept the
+  row. `Number` would give `NaN` and quietly change which rows survive.
 - **The "has a category" filter is on database column 20**, which is transaction field *19* —
   the first key part, not the second.
-- **Short AI Settings rows are padded** to four values. The API trims trailing empty cells, and
-  the original spread whatever it got, so a handbook row missing its last cell shifted every
-  later database column by one.
+- **Short AI Settings rows are padded** to four values. The API trims trailing empty cells, so
+  a handbook row missing its last cell would otherwise shift every later database column.
 - **Existing rows are filtered too.** A legacy row with no category or no date is purged by the
   rebuild even though nothing re-imported it — that is the original behaviour, not a bug.
-- **A source wider than `transaction_length` is truncated with a warning.** The original
-  trusted column J and would have shifted the AI blocks silently.
-- **An empty source range is skipped**, where the original threw on `undefined.forEach` and
-  lost the rest of the sources.
+- **A source wider than `transaction_length` is truncated with a warning**, where the original
+  shifted the AI blocks silently.
+- **An empty source range is skipped**, where the original threw and lost the other sources.
 
-Database rows are grouped by the tab they feed, so one Import Settings tab can rebuild
-several databases in several spreadsheets — one job each, named `General database #1 (DBONE)`
-and so on when there is more than one, so the status cell can tell them apart. Each tab
-clears only its own rows' labels, plus the enabled non-database rows' labels, which are
-cleared from every database as the original did. Leave column F empty on copy rows unless
-you mean that.
-
-A rebuild is one unit of work for retry purposes: it either completes or is deferred whole,
-and it round-trips through the retry payload so a later attempt resumes it without
-re-reading the settings tab.
+Database rows are grouped by the tab they feed, so one Import Settings tab can rebuild several
+databases — one job each, named `General database #1 (DBONE)` and so on when there is more
+than one. Each tab clears only its own rows' labels, plus the enabled non-database rows'
+labels, which are cleared from every database as the original did.
 
 ## Failure handling
 
 Every exception is classified as **transient** (retry) or **permanent** (stop) in
-`errors.py`. The status code alone is not enough, so the reason code in the error body wins
-when it is present:
+`src/Errors.js`. The reason code in the error body wins over the status:
 
 | Failure | Verdict |
 |---|---|
 | 500 / 502 / 503 / 504, `backendError`, `internalError` | transient |
 | 429, `rateLimitExceeded`, `userRateLimitExceeded`, per-minute `quotaExceeded` | transient, honours `Retry-After` |
 | 403 with `rateLimitExceeded` — a throttle wearing a 403 | transient |
-| DNS, TLS, timeouts, connection resets, token-refresh transport errors | transient |
+| a thrown `UrlFetchApp.fetch`: DNS, TLS, timeouts, "Address unavailable" | transient |
 | 403 `permissionDenied` — file not shared with the service account | permanent |
 | 404 — wrong gid, deleted tab | permanent |
 | 400 `badRequest` — unparseable range | permanent |
-| 401 / `invalid_grant` — bad or revoked key | permanent |
-| 429 `dailyLimitExceeded` — resets at midnight PT | permanent, no point retrying today |
+| 401, or the token endpoint rejecting the key | permanent |
+| 429 `dailyLimitExceeded`, or UrlFetchApp's own daily quota | permanent, no point retrying today |
 
 Three layers of retry, each only for transient failures:
 
-1. **Per API call** — 5 attempts, 1s → 32s with jitter, capped by a 90s per-call budget. If the
-   server asks for a longer `Retry-After` than the budget allows, the call gives up early and
-   lets layer 2 handle it rather than sitting in a loop.
-2. **Per row, inside the run** — a row that still fails is *deferred*, not fatal, **and so
-   is every row after it**. Rows run in settings order and a later one may read what an
-   earlier one writes, so running the rest now would use stale input and nothing would
-   come back to redo them. The run re-attempts the deferred rows after 30s, 2m, 5m, 10m,
-   until `--retry-window-minutes` (default 10) is spent; once the blocker clears, the rows
-   behind it run in the same pass. Rows that already succeeded are never touched again.
-   This applies to every mode, not only the database rebuild. A *permanent* failure does
-   not block what follows: it will not fix itself, so holding the run behind it would turn
-   one broken row into a dead run.
-3. **A later run** — anything still deferred is written to `retry.json` and the workflow
-   dispatches itself again after 15m, then 45m, then 90m, up to `--max-attempts` (default 4).
-   The new dispatch carries the same parameters plus only the rows that failed, so a partial
-   sync resumes rather than repeating.
+1. **Per API call** — 5 attempts, 1s → 32s with jitter, capped by a 90s per-call budget.
+2. **Per row, inside the execution** — a row that still fails is *deferred*, **and so is every
+   row after it**: rows run in settings order and a later one may read what an earlier one
+   writes. The deferred rows are tried again after 30s, then 2m, while the execution's time
+   budget lasts. A *permanent* failure does not block what follows.
+3. **A later execution** — what is still deferred is saved and a one-off trigger runs it after
+   15m, then 45m, then 90m, up to 4 attempts. It carries only the rows that did not make it.
 
-The status cell says whether the last run worked, so the state is readable without parsing
-what follows. A clean run says only that, with no numbers: one "row" means a settings row
-for a copy but the whole rebuilt tab for the database import, so a count would change
-meaning by mode. Technical detail appears only when something went wrong:
+Apps Script stops an execution at six minutes, so no new row starts after four. Rows left over
+are continued by a trigger a minute later, on the same attempt; every execution starts at
+least one row, so a continuation always progresses. A single row that alone takes more than
+six minutes cannot be split and fails with Apps Script's own timeout.
+
+One sync runs per spreadsheet at a time. A run that finds another in progress is queued a
+minute later rather than dropped.
 
 | State | Cell |
 |---|---|
-| success | `Import successful`, `Export successful` - the database rebuild reports as an import too; the cell it lands in tells them apart |
-| in progress | `In progress: import requested. This cell updates when it finishes.` - written by the sheet button, and the only place this state is used |
+| success | `Import successful`, `Export successful` — the rebuild reports as an import |
+| in progress | `In progress: import requested. This cell updates when it finishes.` |
+| continuing | `In progress: Payroll, Rates continue at 09/23/2026 12:05:00 - one run can only take a few minutes, no action needed.` |
 | failed | `Failed: Payroll: HTTP 403 (permissiondenied): caller does not have permission` |
-| failed | `Failed: Payroll did not sync - Google Sheets was temporarily unavailable. Retry 2 of 4 scheduled at 08/24/2026 18:05:34, no action needed. Last error - HTTP 503 ...` |
+| failed | `Failed: Payroll did not sync - Google Sheets was temporarily unavailable. Retry 2 of 4 scheduled at 09/23/2026 12:20:00, no action needed. Last error - HTTP 503 ...` |
 | failed | `Failed: Google Sheets stayed unavailable after 4 attempts. Not synced: Payroll. Last error - HTTP 503 ...` |
 
-A deferred row is a failure with a retry attached, not a third state - nothing synced, and
-reporting progress while rows sit unwritten would be a lie. `In progress` therefore means
-only that a run is under way: the Apps Script writes it when it dispatches, and the
-workflow overwrites it with `Success` or `Failed`. A run that is both - one bad range plus
-one deferred row - reports `Failed` with the retry after it, separated by ` | `.
-
-Column 3 of the block always carries a timestamp, in both writers and on failures too, so a
-stale status is never mistaken for a fresh one.
-
-A permanent failure in one row no longer aborts the rest of the run (the Apps Script version
-stopped at the first exception); the remaining rows still sync and every failure is listed in
-J2 and in the run summary.
-
-Waiting for a scheduled retry burns runner minutes, since the retry run sleeps until
-`not_before`. For a multi-hour Google outage, `MAX_WAIT_MINUTES` caps each wait, and after
-`--max-attempts` the sheet is told plainly rather than retrying forever.
+A run that is both — one bad range plus one deferred row — reports `Failed` with the retry
+after it, separated by ` | `. A manual run also shows the final state in an alert.
 
 ## Behaviour parity
 
-Same as the Apps Script, deliberately:
+Same as the original scripts, deliberately:
 
-- an empty source range logs and skips the row instead of failing the run;
+- an empty source range logs and skips the row;
 - a **bounded** source range (`A2:E100`) clears that many target rows even when fewer rows of
   data come back, so stale rows below the data are wiped;
 - an **open-ended** source range (`A2:E`) clears the target down to the last row of the tab;
-- the target tab is grown with `insertDimension` when the block does not fit, inserting after
-  the last row/column with data (or after the last row of the grid if the tab is empty);
+- the target tab is grown when the block does not fit, after the last row/column with data;
 - values only are cleared — formatting, notes and validation survive;
 - writes use `USER_ENTERED`, so formulas and dates behave as they did;
-- one failing row aborts the run and the exception lands in J2, as in the original `catch`.
+- reads use `UNFORMATTED_VALUE` (what `getValues()` returns), except the database tab, which
+  uses `FORMATTED_VALUE` (what `getDisplayValues()` returns).
 
 Deliberate differences:
 
-- **Values are written to an anchor**, sized to the data, rather than to the literal `toRange`
-  string. The Sheets REST API rejects a write whose data is wider than a bounded range; this
-  keeps the Apps Script `setValues(anchor)` semantics. A warning is logged if the data is
-  wider than an explicit target range.
-- **Jagged rows are padded** with empty strings to a rectangle. The range was just cleared, so
-  the padding overwrites nothing.
-- **Reads use `UNFORMATTED_VALUE`**, which is what Apps Script `getValues()` returns. If any
-  copied column relies on display formatting (currency strings, custom date formats copied as
-  text), switch `valueRenderOption` in `client.get_values` to `FORMATTED_VALUE`.
-- **Transient failures are retried and deferred** rather than aborting the run, and a
-  permanent failure in one row no longer stops the others. See *Failure handling*.
-- `SpreadsheetApp.getUi().alert(e)` has no equivalent; failures surface as a non-zero exit
-  code, the run summary, and the J2 cell.
+- **Values are written to an anchor**, sized to the data, rather than to the literal `toRange`.
+  The REST API rejects a write wider than a bounded range.
+- **Jagged rows are padded** to a rectangle; the range was just cleared, so this overwrites
+  nothing.
+- **A permanent failure in one row no longer stops the others**, and transient ones are retried.
 
-## Files
+## Development
+
+```bash
+npm install
+npm test          # node:test against src/, with the Apps Script services stubbed
+npm run push      # clasp push src/ to the library project
+npm run deploy    # push and cut a new library version
+```
 
 ```
-sheets_sync/a1.py        URL + A1 parsing (replaces the FuelFinanceLibraryv2 helpers)
-sheets_sync/errors.py    transient vs permanent classification
-sheets_sync/retry.py     backoff policy
-sheets_sync/client.py    Sheets API v4 wrapper, retries, metadata cache
-sheets_sync/settings.py  reads the Settings tabs, writes J2:J4
-sheets_sync/sync.py      the port of insteadImportOptional / insteadExportOptional
-sheets_sync/database.py  the database rebuild + AI Settings handbook
-sheets_sync/__main__.py  CLI
-.github/workflows/sheets-sync.yml
-apps_script/GithubTrigger.gs          the sheet button: import / export
-apps_script/GithubTriggerDatabase.gs  the same, where import = the database rebuild
+src/A1.js         URL + A1 parsing
+src/Errors.js     transient vs permanent classification
+src/Retry.js      per-call backoff
+src/Client.js     service-account token + Sheets API v4 over UrlFetchApp
+src/Settings.js   reads the Settings tabs, writes the status block
+src/Database.js   the database rebuild + AI Settings handbook
+src/Sync.js       the copy, the run loop, the status text
+src/Main.js       public entry points: run, resume, dryRun; the retry triggers
+templates/        what goes into each spreadsheet's own project
 ```
