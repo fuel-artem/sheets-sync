@@ -29,6 +29,13 @@ failure (`permissionDenied`, stop), and a 429 `dailyLimitExceeded` will not clea
 midnight PT so it is permanent. Adding a status code to a retry set without checking the
 reason code re-breaks this.
 
+## `library/` is a second implementation
+
+An Apps Script library port of the same sync, no GitHub Actions (see README). A behaviour
+change in `sheets_sync/` almost always needs the same change there, and `library/test/run.js`
+mirrors the Python tests. It must keep using the REST API via `UrlFetchApp`, not
+`SpreadsheetApp`, and must keep taking triggers, properties and locks from `host`.
+
 ## Pitfalls that already bit, or nearly did
 
 - **`js_parse_float` is deliberate.** The database tab is read as display values, so an amount

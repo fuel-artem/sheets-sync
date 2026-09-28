@@ -292,3 +292,46 @@ sheets_sync/__main__.py  CLI
 apps_script/GithubTrigger.gs          the sheet button: import / export
 apps_script/GithubTriggerDatabase.gs  the same, where import = the database rebuild
 ```
+
+## Apps Script only: `library/`
+
+The same sync with no GitHub Actions: an Apps Script library that talks to the Sheets REST
+API through `UrlFetchApp`, not `SpreadsheetApp` — unformatted reads, sized writes and real
+status codes, which the transient/permanent split depends on. Behaviour, layouts, status text
+and the database rebuild are ports of the Python above.
+
+```
+library/*.gs, appsscript.json   the library (public: run, resume, plan)
+library/bound/Sync.gs           the sheet button: import / export
+library/bound/SyncDatabase.gs   the same, where import = the database rebuild
+library/bound/appsscript.json   manifest for the spreadsheet's own project
+library/test/run.js             node library/test/run.js - no network, no credentials
+```
+
+**Setup.** Create a standalone Apps Script project from `library/`, *Deploy → New deployment
+→ Library*, and copy its script id into `LIBRARY_SCRIPT_ID` in `bound/appsscript.json`. In
+each spreadsheet's project paste that manifest and **one** of the two bound files (they declare
+the same names). Point the time-driven triggers at `triggerImport` / `triggerExport`. The
+manifest enables the Sheets advanced service only so the API is switched on for the project;
+the code does not use it.
+
+**What differs from the Python version:**
+
+- **It runs as whoever clicked, or whoever owns the trigger.** No service account: that
+  person needs access to every source and target spreadsheet.
+- **Retries are triggers.** Layer 3 is a one-off time-driven trigger (15 / 45 / 90 min, 4
+  attempts) calling `sheetsSyncResume` in the bound script, with its state in that project's
+  script properties. It resumes only the rows left, found again by a hash of their settings
+  row, so nothing is carried in a 9 KB property that can grow with the tab.
+- **The six-minute execution limit.** No job starts after three minutes and no backoff sleeps
+  past five; what is left continues a minute later and the cell reads `In progress: …
+  continuing at …`. A single job longer than six minutes is killed by Apps Script outright
+  and leaves the cell at `In progress`.
+- **Permanent failures are carried** into every later attempt of the same run, so a retry
+  that succeeds does not overwrite an earlier `Failed:` with `Import successful`.
+- **One run per spreadsheet at a time**, under the bound project's script lock. A second
+  click is refused with a toast; a retry that collides moves back a minute.
+- The library hands every trigger, property and lock call to the bound script's own
+  services (`host_()`): a library's own are shared by every spreadsheet that uses it.
+- Before the first real run, `previewImport` / `previewExport` from the editor list the rows
+  that would sync and write nothing.
