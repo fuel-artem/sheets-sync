@@ -60,3 +60,19 @@ c=TabClient(); write_status(c,"SSID","import",None,"me","ok",tab="Renamed")
 assert all(w.startswith("'Renamed'!") for w in c.writes), c.writes
 print("  read/write both honour it; blank falls back to", repr(TAB["import"]))
 print("PASS settings tab")
+
+print()
+print("== big writes are split under the payload limit ==")
+from sheets_sync.a1 import GridRange as _Grid
+from sheets_sync import client as _client_mod
+class _Writer:
+    def __init__(self): self.writes = []
+    def set_values(self, ss, a1, values): self.writes.append((a1, len(values)))
+w = _Writer()
+row = ["x" * 400_000]
+_client_mod.write_grid(w, "SS", _Grid(0, 1, 6, 0, 1), "Data", [row] * 5)
+assert w.writes == [("'Data'!A2:A3", 2), ("'Data'!A4:A5", 2), ("'Data'!A6:A6", 1)], w.writes
+w = _Writer(); _client_mod.write_grid(w, "SS", _Grid(0, 1, 2, 0, 1), "Data", [["x" * 3_000_000]])
+assert w.writes == [("'Data'!A2:A2", 1)], w.writes  # one oversized row still goes, alone
+print("  ", w.writes)
+print("PASS chunking")

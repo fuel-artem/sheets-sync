@@ -78,10 +78,10 @@ function runCopyJob_(client, job) {
     console.warn('[' + job.name + '] source is ' + outWidth + ' columns wide but target range ' +
       to.range + ' is narrower; writing past it');
   }
-  const writeA1 = gridToA1_(grid_(toProps.sheetId, startRow, startRow + values.length, startCol, startCol + outWidth), toProps.title);
-  client.setValues(to.spreadsheetId, writeA1, padRows_(values, outWidth));
+  const target = grid_(toProps.sheetId, startRow, startRow + values.length, startCol, startCol + outWidth);
+  writeGrid_(client, to.spreadsheetId, target, toProps.title, padRows_(values, outWidth));
 
-  console.info('[' + job.name + '] wrote ' + values.length + ' x ' + outWidth + ' to ' + writeA1);
+  console.info('[' + job.name + '] wrote ' + values.length + ' x ' + outWidth + ' to ' + gridToA1_(target, toProps.title));
   return result_(job, 'ok', values.length, outWidth);
 }
 

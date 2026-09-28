@@ -3,13 +3,14 @@
 // Only TransientError_ is retried. A PermanentError_ throws on the first attempt,
 // so a bad range never sits in a backoff loop.
 
-const RETRY_POLICY_ = { attempts: 5, baseDelay: 1, maxDelay: 32, jitter: 0.5, budget: 90 };
+// Six waits of 1..32s add up to just over a minute, which is how long a
+// per-minute quota takes to refill after a 429.
+const RETRY_POLICY_ = { attempts: 7, baseDelay: 1, maxDelay: 32, jitter: 1, budget: 90 };
 
-/** Seconds before retry number `attempt` (1-based): 1, 2, 4 ... plus jitter. */
+/** Google's formula, min(2^n + up to 1s, maximum_backoff), in seconds; attempt is 1-based. */
 function retryDelay_(policy, attempt, retryAfter) {
-  let backoff = Math.min(policy.baseDelay * Math.pow(2, attempt - 1), policy.maxDelay);
-  if (retryAfter != null) backoff = Math.max(backoff, retryAfter);
-  return backoff + Math.random() * policy.jitter;
+  const backoff = Math.min(policy.baseDelay * Math.pow(2, attempt - 1) + Math.random() * policy.jitter, policy.maxDelay);
+  return retryAfter != null ? Math.max(backoff, retryAfter) : backoff;
 }
 
 function callWithRetry_(fn, clock, description, policy) {

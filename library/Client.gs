@@ -5,12 +5,38 @@
 
 const SHEETS_API_ = 'https://sheets.googleapis.com/v4/spreadsheets/';
 
+// The Sheets troubleshooting guide asks for at most one request per second per
+// spreadsheet, and payloads under 2 MB; both are ways a spreadsheet earns a 503.
+const MIN_INTERVAL_MS_ = 1000;
+// JSON characters per write. A Cyrillic character is two bytes, so this stays
+// under 2 MB even when every cell is text in Ukrainian.
+const MAX_WRITE_CHARS_ = 1000000;
+
+/** Write `values` at `grid`'s top-left, in row chunks each under MAX_WRITE_CHARS_. */
+function writeGrid_(client, spreadsheetId, grid, sheetTitle, values) {
+  let start = 0;
+  while (start < values.length) {
+    let end = start;
+    let size = 0;
+    while (end < values.length) {
+      const rowSize = JSON.stringify(values[end]).length;
+      if (end > start && size + rowSize > MAX_WRITE_CHARS_) break;
+      size += rowSize;
+      end++;
+    }
+    const chunk = grid_(grid.sheetId, grid.startRow + start, grid.startRow + end, grid.startCol, grid.endCol);
+    client.setValues(spreadsheetId, gridToA1_(chunk, sheetTitle), values.slice(start, end));
+    start = end;
+  }
+}
+
 class SheetsClient_ {
   constructor(token, clock, fetch) {
     this.token = token;
     this.clock = clock;
     this.fetch = fetch || ((url, options) => UrlFetchApp.fetch(url, options));
     this.meta = {};
+    this.lastCall = {};
   }
 
   call_(method, path, query, body, description) {
@@ -27,6 +53,10 @@ class SheetsClient_ {
       options.contentType = 'application/json';
       options.payload = JSON.stringify(body);
     }
+    const spreadsheetId = path.split(/[/:]/)[0];
+    const wait = (this.lastCall[spreadsheetId] ?? -Infinity) + MIN_INTERVAL_MS_ - this.clock.now();
+    if (wait > 0) this.clock.sleep(wait);
+    this.lastCall[spreadsheetId] = this.clock.now();
     return callWithRetry_(() => {
       let response;
       try {

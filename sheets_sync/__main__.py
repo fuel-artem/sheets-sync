@@ -17,7 +17,7 @@ from typing import List, Optional
 from .client import SheetsClient
 from .database import DatabaseConfig, DatabaseJob
 from .errors import PermanentError, TransientError, classify
-from .retry import RetryPolicy
+from .retry import DEFAULT_POLICY, RetryPolicy
 from .settings import SyncJob
 from .sync import DEFAULT_MAX_ATTEMPTS, DEFAULT_RETRY_WINDOW, run
 
@@ -135,7 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
     retry.add_argument(
         "--call-attempts",
         type=int,
-        default=int(os.environ.get("CALL_ATTEMPTS", "5")),
+        default=int(os.environ.get("CALL_ATTEMPTS", DEFAULT_POLICY.attempts)),
         help="Backoff attempts per individual API call",
     )
     retry.add_argument(

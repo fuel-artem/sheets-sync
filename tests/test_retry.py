@@ -213,3 +213,29 @@ assert rep.retry_request is None and c.status["J2"]=="Import successful", c.stat
 print("  ran:", c.ran, "->", c.status["J2"])
 print("PASS ordering")
 S.run_job=orig
+
+print()
+print("== Google's backoff formula and per-spreadsheet pacing ==")
+import random as _random
+from sheets_sync.retry import RetryPolicy as _Policy
+from sheets_sync.client import SheetsClient as _Client, MIN_INTERVAL
+p = _Policy()
+assert [p.delay_for(n) for n in range(1, 8)] and all(p.delay_for(n) <= 32 for n in range(1, 12))
+_random.seed(0)
+assert all(2 ** (n - 1) <= p.delay_for(n) <= 2 ** (n - 1) + 1 for n in range(1, 6))
+assert p.delay_for(1, retry_after=40) == 40
+# Six waits must outlast the minute a per-minute quota takes to refill.
+assert sum(min(2 ** (n - 1), 32) for n in range(1, p.attempts)) > 60 <= p.budget
+print("  delays within [2^n, 2^n + 1s], capped at 32; six waits cover a quota minute")
+
+class _Req:
+    def execute(self): return {}
+c = _Client.__new__(_Client)
+c.policy = _Policy(); c._last_call = {}; t = [0.0]; slept = []
+c._now = lambda: t[0]
+c._sleep = lambda s: (slept.append(round(s, 3)), t.__setitem__(0, t[0] + s))
+c._execute("A", _Req(), "one"); c._execute("A", _Req(), "two"); c._execute("B", _Req(), "other")
+t[0] += 5; c._execute("A", _Req(), "later")
+assert slept == [MIN_INTERVAL], slept
+print("  second call to the same spreadsheet waited", slept, "- others did not")
+print("PASS limits")

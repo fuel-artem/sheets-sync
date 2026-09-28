@@ -201,9 +201,7 @@ function runDatabaseJob_(client, job) {
 
   const width = widest_(output);
   if (output.length) {
-    client.setValues(
-      spreadsheetId, gridToA1_(grid_(sheetId, 1, 1 + output.length, 0, width), tab), padRows_(output, width)
-    );
+    writeGrid_(client, spreadsheetId, grid_(sheetId, 1, 1 + output.length, 0, width), tab, padRows_(output, width));
   }
 
   if (config.restoreFilter) client.setBasicFilter(spreadsheetId, grid_(sheetId, 0, maxRows, 0, maxCols));

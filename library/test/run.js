@@ -399,6 +399,7 @@ function fakeHost(locked = false) {
   };
 }
 
+g.lib.RealSheetsClient_ = SheetsClient_;
 let activeClient = null;
 vm.runInContext('SheetsClient_ = class { constructor() { return globalThis.activeClient; } };', context);
 const useClient = (client) => { context.activeClient = client; activeClient = client; return client; };
@@ -489,6 +490,43 @@ test('status message: continuation', () => {
   assert.match(g.statusMessage_({ mode: 'export', errors: ['A: bad'], leftNames: ['B'], reason: 'time', nextAt: at, attempt: 1, timeZone: 'UTC' }),
     /^Failed: A: bad \| B still to sync/);
   assert.strictEqual(g.statusMessage_({ mode: 'export', errors: [], leftNames: [], reason: null, attempt: 1 }), 'Export successful');
+});
+
+// ------------------------------------------------------------ API limits
+
+test("backoff follows Google's formula and outlasts a quota minute", () => {
+  const policy = vm.runInContext('RETRY_POLICY_', context);
+  for (let n = 1; n <= 10; n++) {
+    const d = g.retryDelay_(policy, n, null);
+    assert.ok(d >= Math.min(2 ** (n - 1), 32) && d <= Math.min(2 ** (n - 1) + 1, 32), n + ': ' + d);
+  }
+  assert.strictEqual(g.retryDelay_(policy, 1, 40), 40);
+  let waited = 0;
+  for (let n = 1; n < policy.attempts; n++) waited += Math.min(2 ** (n - 1), 32);
+  assert.ok(waited > 60 && waited <= policy.budget, String(waited));
+});
+
+test('at most one request per second per spreadsheet', () => {
+  const c = clock();
+  const ok = { getResponseCode: () => 200, getContentText: () => '{}', getHeaders: () => ({}) };
+  const client = new g.lib.RealSheetsClient_('T', c, () => ok);
+  client.getValues('A', 'A1');
+  client.batchSetValues('A', []);
+  client.getValues('B', 'A1');
+  c.t += 5000;
+  client.getValues('A', 'A1');
+  same(c.slept, [1000]);
+});
+
+test('big writes are split under the payload limit', () => {
+  const writes = [];
+  const writer = { setValues: (ss, a1, values) => writes.push([a1, values.length]) };
+  const row = ['x'.repeat(400000)];
+  g.writeGrid_(writer, 'SS', g.grid_(0, 1, 6, 0, 1), 'Data', [row, row, row, row, row]);
+  same(writes, [["'Data'!A2:A3", 2], ["'Data'!A4:A5", 2], ["'Data'!A6:A6", 1]]);
+  writes.length = 0;
+  g.writeGrid_(writer, 'SS', g.grid_(0, 1, 2, 0, 1), 'Data', [['x'.repeat(3000000)]]);
+  same(writes, [["'Data'!A2:A2", 1]]); // one oversized row still goes, alone
 });
 
 g.execute_ = originalExecute;

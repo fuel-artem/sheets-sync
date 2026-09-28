@@ -28,7 +28,7 @@ from .a1 import (
     split_sheet_title,
     with_sheet_title,
 )
-from .client import SheetsClient
+from .client import SheetsClient, write_grid
 from .database import DatabaseConfig, DatabaseJob, run_database_job, read_database_settings
 from .errors import PermanentError, TransientError, classify
 from .settings import TIME_FORMAT, SyncJob, read_jobs, write_status
@@ -172,21 +172,21 @@ def run_job(client: SheetsClient, job: SyncJob) -> JobResult:
             to_range,
         )
 
-    write_grid = GridRange(
+    target = GridRange(
         sheet_id=to_props["sheetId"],
         start_row_index=start_row,
         end_row_index=start_row + len(padded),
         start_column_index=start_col,
         end_column_index=start_col + out_width,
     )
-    client.set_values(to_ss, write_grid.to_a1(to_props["title"]), padded)
+    write_grid(client, to_ss, target, to_props["title"], padded)
 
     log.info(
         "[%s] wrote %d x %d to %s",
         job.name,
         len(padded),
         out_width,
-        write_grid.to_a1(to_props["title"]),
+        target.to_a1(to_props["title"]),
     )
     return JobResult(job.name, "ok", rows=len(padded), columns=out_width)
 

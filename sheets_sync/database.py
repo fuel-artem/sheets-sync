@@ -27,7 +27,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .a1 import GridRange, index_to_column, parse_a1, sheet_gid_from_url, spreadsheet_id_from_url, split_sheet_title, with_sheet_title
-from .client import SheetsClient
+from .client import SheetsClient, write_grid
 from .errors import PermanentError
 from .settings import COL_NAME, SyncJob
 
@@ -384,7 +384,8 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
     width = max((len(row) for row in output), default=0)
     if output:
         padded = [list(row) + [""] * (width - len(row)) for row in output]
-        client.set_values(
+        write_grid(
+            client,
             ss_id,
             GridRange(
                 sheet_id=sheet_id,
@@ -392,7 +393,8 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
                 end_row_index=1 + len(padded),
                 start_column_index=0,
                 end_column_index=width,
-            ).to_a1(database_tab),
+            ),
+            database_tab,
             padded,
         )
 

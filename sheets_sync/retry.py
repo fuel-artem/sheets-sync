@@ -21,20 +21,23 @@ T = TypeVar("T")
 
 @dataclass
 class RetryPolicy:
-    attempts: int = 5
+    # Six waits of 1..32s add up to just over a minute, which is how long a
+    # per-minute quota takes to refill after a 429.
+    attempts: int = 7
     base_delay: float = 1.0
     max_delay: float = 32.0
-    jitter: float = 0.5
+    jitter: float = 1.0
     # If a single call would spend longer than this waiting, stop and let the
     # caller decide (it will defer the row to a later run instead).
     budget: float = 90.0
 
     def delay_for(self, attempt: int, retry_after: Optional[float] = None) -> float:
-        """attempt is 1-based: 1s, 2s, 4s, 8s ... plus jitter."""
-        backoff = min(self.base_delay * (2 ** (attempt - 1)), self.max_delay)
-        if retry_after is not None:
-            backoff = max(backoff, retry_after)
-        return backoff + random.uniform(0, self.jitter)
+        """Google's formula, min(2^n + up to 1s, maximum_backoff); attempt is 1-based."""
+        backoff = min(
+            self.base_delay * (2 ** (attempt - 1)) + random.uniform(0, self.jitter),
+            self.max_delay,
+        )
+        return max(backoff, retry_after) if retry_after is not None else backoff
 
 
 DEFAULT_POLICY = RetryPolicy()

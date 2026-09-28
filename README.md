@@ -198,11 +198,19 @@ when it is present:
 | 401 / `invalid_grant` — bad or revoked key | permanent |
 | 429 `dailyLimitExceeded` — resets at midnight PT | permanent, no point retrying today |
 
+Two request limits come from the Sheets [troubleshooting guide](https://developers.google.com/workspace/sheets/api/troubleshoot-api-errors),
+as ways to avoid earning a 503 in the first place: at most **one request per second per
+spreadsheet** (the client paces itself), and **payloads under 2 MB** (writes are split into
+row chunks of at most a million JSON characters, which stays under 2 MB even for
+all-Cyrillic text). A split write is not atomic, but a write never was: the range is cleared
+first either way, and a retry redoes the whole row.
+
 Three layers of retry, each only for transient failures:
 
-1. **Per API call** — 5 attempts, 1s → 32s with jitter, capped by a 90s per-call budget. If the
-   server asks for a longer `Retry-After` than the budget allows, the call gives up early and
-   lets layer 2 handle it rather than sitting in a loop.
+1. **Per API call** — up to 7 attempts on Google's formula, `min(2^n + up to 1s, 32s)`, capped
+   by a 90s per-call budget. Six waits add up to just over a minute, which is what a 429 on
+   the per-minute quota needs. If the server asks for a longer `Retry-After` than the budget
+   allows, the call gives up early and lets layer 2 handle it.
 2. **Per row, inside the run** — a row that still fails is *deferred*, not fatal, **and so
    is every row after it**. Rows run in settings order and a later one may read what an
    earlier one writes, so running the rest now would use stale input and nothing would
