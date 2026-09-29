@@ -325,8 +325,17 @@ the code does not use it.
 
 **What differs from the Python version:**
 
-- **It runs as whoever clicked, or whoever owns the trigger.** No service account: that
-  person needs access to every source and target spreadsheet.
+- **It runs as whoever clicked, or whoever installed the trigger.** No service account, on
+  purpose: one sits outside the Workspace domain, so domain link sharing does not reach it
+  and every file would need an explicit share. That person needs access to every source and
+  target spreadsheet, and gets their own per-minute API quota.
+- **A trigger belongs to one person.** The scheduled `triggerImport` / `triggerExport` run as
+  whoever installed them, and so do the retries they schedule; a retry after a manual click
+  runs as the person who clicked. If that person loses access to a file, their runs fail on
+  it. If their account is suspended or deleted, Google stops their triggers without a word -
+  install the schedule from an account that will outlive any one person. Changing the bound
+  manifest's scopes stops existing triggers too, until their owner runs any function by hand
+  once to grant the new ones.
 - **Retries are triggers.** Layer 3 is a one-off time-driven trigger (15 / 45 / 90 min, 4
   attempts) calling `sheetsSyncResume` in the bound script, with its state in that project's
   script properties. It resumes only the rows left, found again by a hash of their settings
