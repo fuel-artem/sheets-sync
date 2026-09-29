@@ -83,7 +83,7 @@ function request_(mode, execution) {
   return request;
 }
 
-/** A library's own triggers, properties and locks are shared by every caller. */
+/** A library's own properties and lock are shared by every spreadsheet that uses it. */
 function host_() {
   return {
     scriptApp: ScriptApp,

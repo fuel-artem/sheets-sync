@@ -1,9 +1,8 @@
 // SheetsSync: the public entry points. Everything else in this library is private.
 //
-// A library's own ScriptApp, PropertiesService and LockService belong to the
-// library project, shared by every spreadsheet that uses it. So the calling
-// script hands over its own as `host` - see bound/Sync.gs - and retries,
-// their state and the lock stay per spreadsheet.
+// A library's Script Properties and Lock are one instance shared by every
+// spreadsheet that uses it. So the calling script hands over its own as `host`
+// - see bound/Sync.gs - and retry state and the lock stay per spreadsheet.
 
 const STATUS_FAILED_ = 'Failed';
 const STATUS_RUNNING_ = 'In progress';
