@@ -66,7 +66,14 @@ function previewExport() {
 
 function sync_(mode, execution) {
   const outcome = SheetsSync.run(request_(mode, execution), host_());
-  if (execution === 'manual') SpreadsheetApp.getActive().toast(outcome.status, 'Fuel Sync', 10);
+  if (execution !== 'manual') return;
+  // The sync is done and its status written; a toast that times out on a heavy
+  // spreadsheet must not report it as failed.
+  try {
+    SpreadsheetApp.getActive().toast(outcome.status, 'Fuel Sync', 10);
+  } catch (exc) {
+    console.warn('could not show the result toast: ' + exc);
+  }
 }
 
 function preview_(mode) {
