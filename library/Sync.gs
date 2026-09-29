@@ -24,9 +24,11 @@ function result_(job, status, rows, columns, detail) {
 }
 
 /**
- * Grow a tab when a height x width block at (startRow, startCol) does not fit,
- * inserting after the last row/column with data, as insertRowsAfter(getLastRow())
- * did. Returns the tab's properties and size afterwards.
+ * Grow a tab when a height x width block at (startRow, startCol) does not fit.
+ * Appended at the end rather than after the last row with data, as the original
+ * did: finding that row means reading the whole tab, which on a large one is the
+ * oversized request that earns a 503, and the values land the same either way.
+ * Returns the tab's properties and size afterwards.
  */
 function ensureFits_(client, spreadsheetId, props, startRow, startCol, height, width) {
   let maxRows = (props.gridProperties || {}).rowCount || 0;
@@ -34,13 +36,8 @@ function ensureFits_(client, spreadsheetId, props, startRow, startCol, height, w
   const availableRows = maxRows - startRow;
   const availableCols = maxCols - startCol;
   if (height > availableRows || width > availableCols) {
-    const [lastRow, lastCol] = client.dataExtent(spreadsheetId, props.title);
-    if (height > availableRows) {
-      client.insertRowsAfter(spreadsheetId, props.sheetId, lastRow > 0 ? lastRow : maxRows, height - availableRows);
-    }
-    if (width > availableCols) {
-      client.insertColumnsAfter(spreadsheetId, props.sheetId, lastCol > 0 ? lastCol : maxCols, width - availableCols);
-    }
+    if (height > availableRows) client.appendRows(spreadsheetId, props.sheetId, height - availableRows);
+    if (width > availableCols) client.appendColumns(spreadsheetId, props.sheetId, width - availableCols);
     props = client.sheetProps(spreadsheetId, props.sheetId, null);
     maxRows = (props.gridProperties || {}).rowCount || maxRows;
     maxCols = (props.gridProperties || {}).columnCount || maxCols;

@@ -263,8 +263,10 @@ Same as the Apps Script, deliberately:
 - a **bounded** source range (`A2:E100`) clears that many target rows even when fewer rows of
   data come back, so stale rows below the data are wiped;
 - an **open-ended** source range (`A2:E`) clears the target down to the last row of the tab;
-- the target tab is grown with `insertDimension` when the block does not fit, inserting after
-  the last row/column with data (or after the last row of the grid if the tab is empty);
+- the target tab is grown when the block does not fit, with rows and columns appended at
+  the end (`appendDimension`). The original inserted after the last row with data, but
+  finding it means reading the whole tab, which on a large tab hung until the API's
+  180-second limit and came back 503. Values land the same; appended rows are unformatted;
 - values only are cleared — formatting, notes and validation survive;
 - writes use `USER_ENTERED`, so formulas and dates behave as they did;
 - one failing row aborts the run and the exception lands in J2, as in the original `catch`.

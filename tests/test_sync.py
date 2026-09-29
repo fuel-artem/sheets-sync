@@ -11,9 +11,8 @@ class Fake:
                 "gridProperties": {"rowCount": self.rows, "columnCount": self.cols}}
     def get_values(self, ss, a1):
         self.calls.append(("get", ss, a1)); return self.src
-    def data_extent(self, ss, title): return (150, 5)
-    def insert_rows_after(self, ss, sid, after, n): self.calls.append(("insRows", after, n)); self.rows += n
-    def insert_columns_after(self, ss, sid, after, n): self.calls.append(("insCols", after, n)); self.cols += n
+    def append_rows(self, ss, sid, n): self.calls.append(("appendRows", n)); self.rows += n
+    def append_columns(self, ss, sid, n): self.calls.append(("appendCols", n)); self.cols += n
     def clear_range(self, ss, grid, title): self.calls.append(("clear", grid.to_a1(title)))
     def set_values(self, ss, a1, values): self.calls.append(("set", a1, len(values), len(values[0])))
 

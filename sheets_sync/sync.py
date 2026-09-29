@@ -117,23 +117,15 @@ def run_job(client: SheetsClient, job: SyncJob) -> JobResult:
     available_rows = max_rows - start_row
     available_cols = max_cols - start_col
 
-    # Grow the target tab if the incoming block does not fit.
+    # Grow the target tab if the incoming block does not fit. Appended at the end
+    # rather than after the last row with data, as the original did: finding that
+    # row means reading the whole tab, which on a large one is the oversized
+    # request that earns a 503, and the values land the same either way.
     if height > available_rows or width > available_cols:
-        last_row, last_col = client.data_extent(to_ss, to_props["title"])
         if height > available_rows:
-            client.insert_rows_after(
-                to_ss,
-                to_props["sheetId"],
-                last_row if last_row > 0 else max_rows,
-                height - available_rows,
-            )
+            client.append_rows(to_ss, to_props["sheetId"], height - available_rows)
         if width > available_cols:
-            client.insert_columns_after(
-                to_ss,
-                to_props["sheetId"],
-                last_col if last_col > 0 else max_cols,
-                width - available_cols,
-            )
+            client.append_columns(to_ss, to_props["sheetId"], width - available_cols)
         to_props = client.sheet_props(to_ss, gid=to_props["sheetId"])
         grid_props = to_props.get("gridProperties", {})
         max_rows = grid_props.get("rowCount", max_rows)

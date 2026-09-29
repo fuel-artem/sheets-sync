@@ -100,13 +100,6 @@ class SheetsClient_ {
     throw new PermanentError_('Tab with gid=' + gid + ' not found in spreadsheet ' + spreadsheetId);
   }
 
-  /** [lastRow, lastColumn] with data, 1-based; [0, 0] when empty. */
-  dataExtent(spreadsheetId, sheetTitle) {
-    const values = this.getValues(spreadsheetId, withSheetTitle_('A1:ZZZ', sheetTitle));
-    if (!values) return [0, 0];
-    return [values.length, values.reduce((w, row) => Math.max(w, row.length), 0)];
-  }
-
   // ------------------------------------------------------------------ values
 
   /** FORMATTED_VALUE is the equivalent of getDisplayValues(). */
@@ -160,17 +153,25 @@ class SheetsClient_ {
     this.metadata(spreadsheetId, true);
   }
 
-  insertRowsAfter(spreadsheetId, sheetId, afterRow, count) {
-    this.insertDimension_(spreadsheetId, sheetId, 'ROWS', afterRow, count);
-  }
-
   /** Like insertRowsBefore: `beforeRow` is 1-based. */
   insertRowsBefore(spreadsheetId, sheetId, beforeRow, count) {
     this.insertDimension_(spreadsheetId, sheetId, 'ROWS', Math.max(beforeRow - 1, 0), count);
   }
 
-  insertColumnsAfter(spreadsheetId, sheetId, afterCol, count) {
-    this.insertDimension_(spreadsheetId, sheetId, 'COLUMNS', afterCol, count);
+  /** Rows or columns added at the end of a tab; nothing already there moves. */
+  appendDimension_(spreadsheetId, sheetId, dimension, count) {
+    if (count <= 0) return;
+    this.batchUpdate_(spreadsheetId, [{ appendDimension: { sheetId: sheetId, dimension: dimension, length: count } }],
+      'append ' + dimension);
+    this.metadata(spreadsheetId, true);
+  }
+
+  appendRows(spreadsheetId, sheetId, count) {
+    this.appendDimension_(spreadsheetId, sheetId, 'ROWS', count);
+  }
+
+  appendColumns(spreadsheetId, sheetId, count) {
+    this.appendDimension_(spreadsheetId, sheetId, 'COLUMNS', count);
   }
 
   // ------------------------------------------------------------ basic filter

@@ -122,17 +122,6 @@ class SheetsClient:
                 return props
         raise ValueError(f"Tab with gid={gid} not found in spreadsheet {spreadsheet_id}")
 
-    def data_extent(self, spreadsheet_id: str, sheet_title: str) -> tuple:
-        """(last_row, last_column) with data, 1-based; (0, 0) when empty.
-
-        Like getLastRow()/getLastColumn(): the API trims trailing empties when a
-        whole tab is requested.
-        """
-        values = self.get_values(spreadsheet_id, with_sheet_title("A1:ZZZ", sheet_title))
-        if not values:
-            return 0, 0
-        return len(values), max((len(row) for row in values), default=0)
-
     # ------------------------------------------------------------------ values
 
     def get_values(
@@ -240,15 +229,26 @@ class SheetsClient:
         )
         self.metadata(spreadsheet_id, refresh=True)
 
-    def insert_rows_after(self, spreadsheet_id: str, sheet_id: int, after_row: int, count: int):
-        self._insert_dimension(spreadsheet_id, sheet_id, "ROWS", after_row, count)
-
     def insert_rows_before(self, spreadsheet_id: str, sheet_id: int, before_row: int, count: int):
         """Apps Script insertRowsBefore: before_row is 1-based."""
         self._insert_dimension(spreadsheet_id, sheet_id, "ROWS", max(before_row - 1, 0), count)
 
-    def insert_columns_after(self, spreadsheet_id: str, sheet_id: int, after_col: int, count: int):
-        self._insert_dimension(spreadsheet_id, sheet_id, "COLUMNS", after_col, count)
+    def _append_dimension(self, spreadsheet_id: str, sheet_id: int, dimension: str, count: int) -> None:
+        """Rows or columns added at the end of a tab; nothing already there moves."""
+        if count <= 0:
+            return
+        self._batch_update(
+            spreadsheet_id,
+            [{"appendDimension": {"sheetId": sheet_id, "dimension": dimension, "length": count}}],
+            f"append {dimension}",
+        )
+        self.metadata(spreadsheet_id, refresh=True)
+
+    def append_rows(self, spreadsheet_id: str, sheet_id: int, count: int):
+        self._append_dimension(spreadsheet_id, sheet_id, "ROWS", count)
+
+    def append_columns(self, spreadsheet_id: str, sheet_id: int, count: int):
+        self._append_dimension(spreadsheet_id, sheet_id, "COLUMNS", count)
 
     # ------------------------------------------------------------ basic filter
 

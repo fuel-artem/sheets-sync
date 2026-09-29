@@ -161,9 +161,8 @@ class CopyClient {
     return { sheetId: gid || 0, title: 'Data', gridProperties: { rowCount: this.rows, columnCount: this.cols } };
   }
   getValues(ss, a1) { this.calls.push(['get', ss, a1]); return this.src; }
-  dataExtent() { return [150, 5]; }
-  insertRowsAfter(ss, sid, after, n) { this.calls.push(['insRows', after, n]); this.rows += n; }
-  insertColumnsAfter(ss, sid, after, n) { this.calls.push(['insCols', after, n]); this.cols += n; }
+  appendRows(ss, sid, n) { this.calls.push(['appendRows', n]); this.rows += n; }
+  appendColumns(ss, sid, n) { this.calls.push(['appendCols', n]); this.cols += n; }
   clearRange(ss, grid, title) { this.calls.push(['clear', g.gridToA1_(grid, title)]); }
   setValues(ss, a1, values) { this.calls.push(['set', a1, values.length, values[0].length]); this.written = values; }
 }
@@ -186,7 +185,7 @@ test('copy: bounded source clears as many rows as it covers', () => {
 test('copy: grows the target tab', () => {
   const c = new CopyClient(20, 4, Array.from({ length: 40 }, () => [0, 1, 2, 3, 4, 5]));
   g.runCopyJob_(c, copy('t3', 'A1:F40', 'A5'));
-  same(c.calls.slice(1), [['insRows', 150, 24], ['insCols', 5, 2], ['clear', "'Data'!A5:F44"], ['set', "'Data'!A5:F44", 40, 6]]);
+  same(c.calls.slice(1), [['appendRows', 24], ['appendCols', 2], ['clear', "'Data'!A5:F44"], ['set', "'Data'!A5:F44", 40, 6]]);
 });
 
 test('copy: empty source is skipped, jagged rows are padded', () => {
@@ -563,7 +562,7 @@ test('setValues: an explicit range is cleared first', () => {
 test('setValues: grows the tab and writes Dates as dates', () => {
   let c = useClient(new ValuesClient(20, 4));
   g.setValues(at('A5'), Array.from({ length: 40 }, () => [0, 1, 2, 3, 4, 5]));
-  same(c.calls, [['insRows', 150, 24], ['insCols', 5, 2], ['set', "'Data'!A5:F44", 40, 6]]);
+  same(c.calls, [['appendRows', 24], ['appendCols', 2], ['set', "'Data'!A5:F44", 40, 6]]);
   c = useClient(new ValuesClient());
   g.setValues(at('A1'), [[new Date('2026-09-29T10:00:00Z'), 'x']]);
   same(c.written, [['Europe/Kyiv|2026-09-29T10:00:00.000Z', 'x']]);
