@@ -595,5 +595,14 @@ test('getValues: bounded ranges are padded back, open ones end at the data', () 
   assert.throws(() => g.getValues(at('A1', 'nope')), /getValues failed for nope A1: Cannot extract a spreadsheet id/);
 });
 
+test('getValues: serial dates on request', () => {
+  const c = useClient(new ValuesClient(200, 10, [[45000]]));
+  const seen = [];
+  c.getValues = (ss, a1, values, dates) => { seen.push(dates); return [[45000]]; };
+  g.getValues(at('A1'));
+  g.getValues(at('A1'), { serialDates: true });
+  same(seen, ['FORMATTED_STRING', 'SERIAL_NUMBER']);
+});
+
 g.execute_ = originalExecute;
 console.log(passed + ' tests passed');

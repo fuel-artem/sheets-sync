@@ -330,7 +330,8 @@ The range decides what `setValues` replaces: an anchor (`A2`) only writes; an ex
 (`A2:E100`, `A2:E`) is cleared first, so rows left from a longer write disappear. Every
 location is attempted and one error at the end carries `failures: [{ location, message,
 transient }]`. `getValues` pads a bounded range back to its size — the API trims trailing
-blanks — and returns dates as the text the cell shows, which native `getValues()` does not.
+blanks — and returns dates as the text the cell shows, which native `getValues()` does not;
+`getValues(location, { serialDates: true })` gives serial numbers instead.
 The calling script needs the `spreadsheets` and `script.external_request` scopes.
 
 **Setup.** Create a standalone Apps Script project from `library/`, *Deploy → New deployment

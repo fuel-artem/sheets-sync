@@ -52,16 +52,18 @@ function setValues(locations, values) {
  * returns a 2D array, or a list of them in the same order.
  *
  * Unformatted, as getValues() is, except that dates come back as the text the
- * cell shows. The API trims trailing empty cells, so a bounded dimension is
- * padded back to the range's size with ''; an open one ('A2:E') ends at the last
- * row with data. Rows are always rectangular.
+ * cell shows - or, with { serialDates: true }, as serial numbers (days since
+ * 1899-12-30), which survive any display format. The API trims trailing empty
+ * cells, so a bounded dimension is padded back to the range's size with ''; an
+ * open one ('A2:E') ends at the last row with data. Rows are always rectangular.
  */
-function getValues(locations) {
+function getValues(locations, options) {
+  const dates = options && options.serialDates ? 'SERIAL_NUMBER' : 'FORMATTED_STRING';
   const many = Array.isArray(locations);
   const client = new SheetsClient_(ScriptApp.getOAuthToken(), clock_());
   const out = (many ? locations : [locations]).map((source) => {
     try {
-      return readValues_(client, source);
+      return readValues_(client, source, dates);
     } catch (exc) {
       throw new Error('getValues failed for ' + describeLocation_(source) + ': ' + classify_(exc).message);
     }
@@ -112,11 +114,13 @@ function writeValues_(client, location, values) {
   writeGrid_(client, to.spreadsheetId, target, fit.props.title, rows);
 }
 
-function readValues_(client, location) {
+function readValues_(client, location, dateTimeRenderOption) {
   checkLocation_(location);
   const from = resolve_(client, location.url, location.range);
   const grid = parseA1_(from.range, from.props.sheetId);
-  const values = client.getValues(from.spreadsheetId, withSheetTitle_(from.range, from.props.title)) || [];
+  const values = client.getValues(
+    from.spreadsheetId, withSheetTitle_(from.range, from.props.title), 'UNFORMATTED_VALUE', dateTimeRenderOption
+  ) || [];
   const height = grid.endRow != null ? grid.endRow - grid.startRow : values.length;
   const width = grid.endCol != null ? grid.endCol - grid.startCol : widest_(values);
   const rows = values.slice(0, height);

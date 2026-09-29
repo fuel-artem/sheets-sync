@@ -110,10 +110,13 @@ class SheetsClient_ {
   // ------------------------------------------------------------------ values
 
   /** FORMATTED_VALUE is the equivalent of getDisplayValues(). */
-  getValues(spreadsheetId, a1, valueRenderOption) {
+  getValues(spreadsheetId, a1, valueRenderOption, dateTimeRenderOption) {
     const response = this.call_(
       'get', spreadsheetId + '/values/' + encodeURIComponent(a1),
-      { valueRenderOption: valueRenderOption || 'UNFORMATTED_VALUE', dateTimeRenderOption: 'FORMATTED_STRING' },
+      {
+        valueRenderOption: valueRenderOption || 'UNFORMATTED_VALUE',
+        dateTimeRenderOption: dateTimeRenderOption || 'FORMATTED_STRING',
+      },
       undefined, 'get ' + a1
     );
     return response.values || null;
