@@ -22,15 +22,19 @@
  * Every location is attempted. If any fail, one error is thrown at the end, with
  * `failures`: [{ location, message, transient }], `transient` meaning a later
  * retry may succeed.
+ *
+ * options.startedAt: when the calling execution began (Date.now() at the top of
+ * the script), so retries stop waiting before Apps Script's limit, not a fixed
+ * time after this call.
  */
-function setValues(locations, values) {
+function setValues(locations, values, options) {
   const many = Array.isArray(locations);
   const targets = many ? locations : [locations];
   const blocks = many ? values : [values];
   if (!Array.isArray(blocks) || blocks.length !== targets.length) {
     throw new Error('setValues needs one 2D array of values per location');
   }
-  const client = new SheetsClient_(ScriptApp.getOAuthToken(), clock_());
+  const client = new SheetsClient_(ScriptApp.getOAuthToken(), clock_(options && options.startedAt));
   const failures = [];
   targets.forEach((target, i) => {
     try {
@@ -56,11 +60,12 @@ function setValues(locations, values) {
  * 1899-12-30), which survive any display format. The API trims trailing empty
  * cells, so a bounded dimension is padded back to the range's size with ''; an
  * open one ('A2:E') ends at the last row with data. Rows are always rectangular.
+ * options.startedAt works as in setValues.
  */
 function getValues(locations, options) {
   const dates = options && options.serialDates ? 'SERIAL_NUMBER' : 'FORMATTED_STRING';
   const many = Array.isArray(locations);
-  const client = new SheetsClient_(ScriptApp.getOAuthToken(), clock_());
+  const client = new SheetsClient_(ScriptApp.getOAuthToken(), clock_(options && options.startedAt));
   const out = (many ? locations : [locations]).map((source) => {
     try {
       return readValues_(client, source, dates);

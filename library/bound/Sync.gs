@@ -7,6 +7,9 @@
 
 const SETTINGS_TABS = { import: 'Import Settings', export: 'Export Settings' };
 
+// Top-level code runs when an execution starts, so this is its start time.
+const STARTED_AT = Date.now();
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Fuel Sync')
@@ -74,5 +77,6 @@ function host_() {
     properties: PropertiesService.getScriptProperties(),
     lock: LockService.getScriptLock(),
     resumeHandler: 'sheetsSyncResume',
+    startedAt: STARTED_AT,
   };
 }

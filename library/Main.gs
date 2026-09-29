@@ -13,10 +13,17 @@ const RETRY_DELAYS_MIN_ = [15, 45, 90];
 // A run cut short by the execution limit carries on after this long.
 const CONTINUE_DELAY_MIN_ = 1;
 
-// Apps Script kills an execution at six minutes. No new job starts after the
-// cutoff, and no backoff sleeps past the deadline.
-const JOB_START_CUTOFF_MS_ = 3 * 60 * 1000;
-const RUN_DEADLINE_MS_ = 5 * 60 * 1000;
+// How long Apps Script lets one execution run on this account before killing it.
+// Google's quota page says six minutes for every account type; this Workspace
+// account runs for thirty.
+const EXECUTION_LIMIT_MS_ = 30 * 60 * 1000;
+// Measured from when the execution started: no new job starts with less than
+// JOB_RESERVE_MS_ left, and no backoff sleeps into the last DEADLINE_MARGIN_MS_.
+const JOB_RESERVE_MS_ = 3 * 60 * 1000;
+const DEADLINE_MARGIN_MS_ = 60 * 1000;
+// When this library was loaded - the start of the execution at the latest - for
+// callers that do not say when theirs began.
+const LOADED_AT_ = Date.now();
 const LOCK_WAIT_MS_ = 5 * 1000;
 
 const STATE_PREFIX_ = 'sheetsSync:';
@@ -35,7 +42,8 @@ const CARRIED_ERROR_LENGTH_ = 300;
  *   settingsTab     its name
  *   requestedBy     written to the status block
  *   databaseConfig  database mode only: overrides of DATABASE_DEFAULTS_
- * host: { scriptApp, properties, lock, resumeHandler } of the calling script.
+ * host: { scriptApp, properties, lock, resumeHandler, startedAt } of the calling
+ * script; startedAt is when its execution began, see bound/Sync.gs.
  *
  * Returns { status, busy, results }: the text written to the status cell, whether
  * the run was refused because another one holds the lock, and one result per job.
@@ -59,7 +67,7 @@ function resume(event, host) {
 /** The rows a run would sync, one line each. Reads the settings, writes nothing. */
 function plan(request, host) {
   const req = normalizeRequest_(request);
-  const client = new SheetsClient_(host.scriptApp.getOAuthToken(), clock_());
+  const client = new SheetsClient_(host.scriptApp.getOAuthToken(), clock_(host.startedAt));
   return readSettings_(client, req).map((job) => job.kind === 'database'
     ? job.name + ' <- ' + job.sources.map((s) => s.name).join(', ')
     : job.name + ': ' + job.fromRange + ' -> ' + job.toRange);
@@ -89,13 +97,14 @@ function readSettings_(client, req) {
     : readJobs_(client, req.spreadsheetId, req.mode, req.execution, req.settingsTab);
 }
 
-function clock_() {
-  const start = Date.now();
+/** `startedAt`: when the execution began (ms or a Date); the time already spent counts. */
+function clock_(startedAt) {
+  const start = startedAt == null ? LOADED_AT_ : Number(startedAt);
   return {
     now: () => Date.now(),
     sleep: (ms) => Utilities.sleep(ms),
-    startCutoff: start + JOB_START_CUTOFF_MS_,
-    deadline: start + RUN_DEADLINE_MS_,
+    startCutoff: start + EXECUTION_LIMIT_MS_ - JOB_RESERVE_MS_,
+    deadline: start + EXECUTION_LIMIT_MS_ - DEADLINE_MARGIN_MS_,
   };
 }
 
@@ -109,7 +118,7 @@ function start_(request, host, state, resumed) {
     return { status: 'Another sync is already running on this spreadsheet. Try again in a few minutes.', busy: true };
   }
   try {
-    const clock = clock_();
+    const clock = clock_(host.startedAt);
     return sync_(req, state, host, new SheetsClient_(host.scriptApp.getOAuthToken(), clock), clock);
   } finally {
     host.lock.releaseLock();

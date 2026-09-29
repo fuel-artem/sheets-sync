@@ -360,10 +360,15 @@ the code does not use it.
   attempts) calling `sheetsSyncResume` in the bound script, with its state in that project's
   script properties. It resumes only the rows left, found again by a hash of their settings
   row, so nothing is carried in a 9 KB property that can grow with the tab.
-- **The six-minute execution limit.** No job starts after three minutes and no backoff sleeps
-  past five; what is left continues a minute later and the cell reads `In progress: …
-  continuing at …`. A single job longer than six minutes is killed by Apps Script outright
-  and leaves the cell at `In progress`.
+- **The execution limit.** `EXECUTION_LIMIT_MS_` in `Main.gs` is 30 minutes, what this
+  Workspace account allows; Google's quota page says six for every account, so lower it if
+  executions start dying. Time counts from when the *execution* started, not the call:
+  `STARTED_AT` at the top of the bound script is passed as `host.startedAt`, and another
+  script passes its own as `{ startedAt }` to `setValues` / `getValues` (without it, the
+  library's load time). No job starts with under three minutes left and no backoff sleeps
+  into the last one; what is left continues a minute later and the cell reads
+  `In progress: … continuing at …`. A single job that outlasts the limit is killed by Apps
+  Script outright and leaves the cell at `In progress`.
 - **Permanent failures are carried** into every later attempt of the same run, so a retry
   that succeeds does not overwrite an earlier `Failed:` with `Import successful`.
 - **One run per spreadsheet at a time**, under the bound project's script lock. A second

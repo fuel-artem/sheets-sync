@@ -603,5 +603,15 @@ test('getValues: serial dates on request', () => {
   same(seen, ['FORMATTED_STRING', 'SERIAL_NUMBER']);
 });
 
+test('the clock counts from when the execution started', () => {
+  const now = Date.now();
+  const late = g.clock_(now - 28 * 60 * 1000); // 28 of 30 minutes already gone
+  assert.ok(late.startCutoff < now, 'no new job starts with 2 minutes left');
+  assert.ok(Math.abs(late.deadline - (now + 60 * 1000)) < 1000, 'backoff stops a minute before the limit');
+  const fresh = g.clock_(new Date(now));
+  assert.ok(fresh.startCutoff - now > 26 * 60 * 1000);
+  assert.ok(g.clock_().deadline <= g.clock_(now).deadline, 'the default is the library load time');
+});
+
 g.execute_ = originalExecute;
 console.log(passed + ' tests passed');

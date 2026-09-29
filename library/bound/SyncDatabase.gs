@@ -21,6 +21,9 @@ const DATABASE_CONFIG = {
   statusCells: ['L2', 'L3', 'L4'],
 };
 
+// Top-level code runs when an execution starts, so this is its start time.
+const STARTED_AT = Date.now();
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Fuel Sync')
@@ -90,5 +93,6 @@ function host_() {
     properties: PropertiesService.getScriptProperties(),
     lock: LockService.getScriptLock(),
     resumeHandler: 'sheetsSyncResume',
+    startedAt: STARTED_AT,
   };
 }
