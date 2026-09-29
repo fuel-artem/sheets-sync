@@ -44,6 +44,19 @@ const DATABASE_DEFAULTS_ = {
   declaredLengthColumn: 9,
   statusCells: ['L2', 'L3', 'L4'],
   restoreFilter: true,
+  // Existing-row columns kept past keepColumns (e.g. an aiSummaryColumn).
+  keepAlso: [],
+  // The last of the trailingNew columns holds the AI blocks' values joined,
+  // instead of staying blank.
+  aiSummaryColumn: false,
+  // { start, end }: A1 cells on the settings spreadsheet ("'Import Settings'!L8").
+  // A transaction survives if one of its dates is on or after start and one is
+  // on or before end; a blank cell leaves that side open. Sources are then read
+  // with dates as serial numbers, which is what makes them comparable.
+  dateWindow: null,
+  // Sources that are not settings rows, added to every rebuild:
+  // { name, label, fromUrl, fromRange, ignoreEndDate }.
+  extraSources: [],
 };
 
 function databaseConfig_(overrides) {
@@ -116,8 +129,41 @@ function buildRow_(transaction, label, handbooks, config) {
       for (let i = 0; i < config.aiBlockWidth; i++) row.push('');
     }
   }
+  const aiValues = row.slice(1 + config.transactionLength);
   for (let i = 0; i < config.trailingNew; i++) row.push('');
+  if (config.aiSummaryColumn && config.trailingNew) row[row.length - 1] = aiValues.join('');
   return row;
+}
+
+/** An existing row: keepColumns and keepAlso survive, the rest is blanked. */
+function keptRow_(row, config) {
+  const width = Math.max(config.keepColumns, ...config.keepAlso.map((c) => c + 1));
+  const kept = [];
+  for (let c = 0; c < width; c++) {
+    kept.push(c < config.keepColumns || config.keepAlso.indexOf(c) !== -1 ? cell_(row, c) : '');
+  }
+  for (let i = 0; i < config.trailingBlanks; i++) kept.push('');
+  return kept;
+}
+
+/** The date window's bounds as serial numbers; null for an open side. */
+function readDateWindow_(client, spreadsheetId, dateWindow) {
+  const bound = (a1) => {
+    if (!a1) return null;
+    const [title, range] = splitSheetTitle_(a1);
+    const value = cell_((client.getValues(spreadsheetId, withSheetTitle_(range, title), 'UNFORMATTED_VALUE', 'SERIAL_NUMBER') || [[]])[0] || [], 0);
+    if (value === '') return null;
+    if (typeof value !== 'number') throw new PermanentError_('Date window ' + a1 + ' is not a date: ' + JSON.stringify(value));
+    return value;
+  };
+  return { start: bound(dateWindow.start), end: bound(dateWindow.end) };
+}
+
+function inDateWindow_(transaction, config, window, ignoreEndDate) {
+  const dates = Object.values(config.dateIndexes).map((i) => cell_(transaction, i)).filter((v) => typeof v === 'number');
+  if (window.start != null && !dates.some((d) => d >= window.start)) return false;
+  if (!ignoreEndDate && window.end != null && !dates.some((d) => d <= window.end)) return false;
+  return true;
 }
 
 /** The source label sits at database column 0, so transaction field i is at i + 1. */
@@ -162,19 +208,23 @@ function runDatabaseJob_(client, job) {
   let output = existing
     .filter((row) => row.length && cellText_(row, 0) !== '' && !replaced.has(cellText_(row, 0)))
     // Blank the month/year columns so their formulas are not carried over.
-    .map((row) => row.slice(0, config.keepColumns).concat(new Array(config.trailingBlanks).fill('')));
+    .map((row) => keptRow_(row, config));
   console.info('kept ' + output.length + ' existing row(s) of ' + existing.length);
 
+  const window = config.dateWindow ? readDateWindow_(client, job.settingsSpreadsheetId, config.dateWindow) : null;
   for (const source of job.sources) {
     const fromId = spreadsheetIdFromUrl_(source.fromUrl);
     const [explicitTitle, plainRange] = splitSheetTitle_(source.fromRange);
     const fromProps = client.sheetProps(fromId, sheetGidFromUrl_(source.fromUrl), explicitTitle);
-    const values = client.getValues(fromId, withSheetTitle_(plainRange, fromProps.title));
+    let values = client.getValues(
+      fromId, withSheetTitle_(plainRange, fromProps.title), 'UNFORMATTED_VALUE', window ? 'SERIAL_NUMBER' : undefined
+    );
     if (!values) {
       // Skipping keeps the other sources alive; the original threw here.
       console.warn('[' + source.name + '] source range is empty, nothing imported');
       continue;
     }
+    if (window) values = values.filter((t) => inDateWindow_(t, config, window, source.ignoreEndDate));
     for (const transaction of values) output.push(buildRow_(transaction, source.label, handbooks, config));
     console.info('[' + source.name + '] ' + values.length + ' transaction(s)');
   }
@@ -276,10 +326,10 @@ function readDatabaseSettings_(client, spreadsheetId, execution, config, tab) {
       name: name,
       settingsSpreadsheetId: spreadsheetId,
       databaseUrl: group.url,
-      sources: group.sources,
+      sources: group.sources.concat(config.extraSources),
       // Only this tab's own labels are cleared from it. The enabled copy rows'
       // labels are cleared from every database, as the original did.
-      replacedLabels: group.labels.concat(otherLabels),
+      replacedLabels: group.labels.concat(config.extraSources.map((x) => x.label), otherLabels),
       config: config,
     });
   }

@@ -336,6 +336,13 @@ blanks — and returns dates as the text the cell shows, which native `getValues
 `getValues(location, { serialDates: true })` gives serial numbers instead.
 The calling script needs the `spreadsheets` and `script.external_request` scopes.
 
+**Database options beyond the Python version**, for spreadsheets still on a legacy layout
+(`DATABASE_DEFAULTS_` in `Database.gs` documents each): `keepAlso` keeps extra existing-row
+columns past `keepColumns`; `aiSummaryColumn` fills the last new-row column with the AI
+values joined; `dateWindow: { start, end }` names settings cells that bound which
+transactions import, reading sources with serial dates so they compare; `extraSources` adds
+sources that are not settings rows, optionally with `ignoreEndDate`.
+
 **Setup.** Create a standalone Apps Script project from `library/`, *Deploy → New deployment
 → Library*, and copy its script id into `LIBRARY_SCRIPT_ID` in `bound/appsscript.json`. In
 each spreadsheet's project paste that manifest and **one** of the two bound files (they declare
