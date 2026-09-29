@@ -7,7 +7,7 @@
       { "userSymbol": "Sheets", "serviceId": "sheets", "version": "v4" }
     ],
     "libraries": [
-      { "userSymbol": "SheetsSync", "libraryId": "LIBRARY_SCRIPT_ID", "version": "1" }
+      { "userSymbol": "FuelImportLibrary", "libraryId": "LIBRARY_SCRIPT_ID", "version": "1" }
     ]
   },
   "oauthScopes": [

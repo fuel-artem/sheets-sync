@@ -1,4 +1,4 @@
-// SheetsSync: the public entry points. Everything else in this library is private.
+// FuelImportLibrary: the public entry points. Everything else in this library is private.
 //
 // A library's Script Properties and Lock are one instance shared by every
 // spreadsheet that uses it. So the calling script hands over its own as `host`

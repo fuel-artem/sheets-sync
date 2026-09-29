@@ -1,5 +1,5 @@
 /**
- * Fuel Sync - import and export, run in Apps Script by the SheetsSync library.
+ * Fuel Sync - import and export, run in Apps Script by the FuelImportLibrary library.
  *
  * For a spreadsheet with a database tab use SyncDatabase.gs instead. Never both
  * in one project: they declare the same names.
@@ -38,7 +38,7 @@ function triggerExport() {
 
 /** Retries and continuations land here; host_ names it for the library. */
 function sheetsSyncResume(event) {
-  SheetsSync.resume(event, host_());
+  FuelImportLibrary.resume(event, host_());
 }
 
 /** Run from the editor before the first real sync: lists the rows, writes nothing. */
@@ -51,7 +51,7 @@ function previewExport() {
 }
 
 function sync_(mode, execution) {
-  const outcome = SheetsSync.run(request_(mode, execution), host_());
+  const outcome = FuelImportLibrary.run(request_(mode, execution), host_());
   if (execution !== 'manual') return;
   // The sync is done and its status written; a toast that times out on a heavy
   // spreadsheet must not report it as failed.
@@ -63,7 +63,7 @@ function sync_(mode, execution) {
 }
 
 function preview_(mode) {
-  const lines = SheetsSync.plan(request_(mode, 'manual'), host_());
+  const lines = FuelImportLibrary.plan(request_(mode, 'manual'), host_());
   SpreadsheetApp.getUi().alert(lines.length ? lines.join('\n') : 'No rows are enabled.');
 }
 

@@ -323,9 +323,9 @@ REST, retries, pacing, chunked writes and tab growth, no settings tab. A locatio
 `{ url, range }`, as in a settings row:
 
 ```js
-SheetsSync.setValues({ url: URL, range: 'A2:E' }, rows);                 // one
-SheetsSync.setValues([locationA, locationB], [rowsA, rowsB]);             // several
-const rows = SheetsSync.getValues({ url: URL, range: "'Data'!A2:E" });
+FuelImportLibrary.setValues({ url: URL, range: 'A2:E' }, rows);                 // one
+FuelImportLibrary.setValues([locationA, locationB], [rowsA, rowsB]);             // several
+const rows = FuelImportLibrary.getValues({ url: URL, range: "'Data'!A2:E" });
 ```
 
 The range decides what `setValues` replaces: an anchor (`A2`) only writes; an explicit range
