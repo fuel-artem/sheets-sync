@@ -23,6 +23,31 @@ function result_(job, status, rows, columns, detail) {
   return { name: job.name, status: status, rows: rows || 0, columns: columns || 0, detail: detail || '' };
 }
 
+/**
+ * Grow a tab when a height x width block at (startRow, startCol) does not fit,
+ * inserting after the last row/column with data, as insertRowsAfter(getLastRow())
+ * did. Returns the tab's properties and size afterwards.
+ */
+function ensureFits_(client, spreadsheetId, props, startRow, startCol, height, width) {
+  let maxRows = (props.gridProperties || {}).rowCount || 0;
+  let maxCols = (props.gridProperties || {}).columnCount || 0;
+  const availableRows = maxRows - startRow;
+  const availableCols = maxCols - startCol;
+  if (height > availableRows || width > availableCols) {
+    const [lastRow, lastCol] = client.dataExtent(spreadsheetId, props.title);
+    if (height > availableRows) {
+      client.insertRowsAfter(spreadsheetId, props.sheetId, lastRow > 0 ? lastRow : maxRows, height - availableRows);
+    }
+    if (width > availableCols) {
+      client.insertColumnsAfter(spreadsheetId, props.sheetId, lastCol > 0 ? lastCol : maxCols, width - availableCols);
+    }
+    props = client.sheetProps(spreadsheetId, props.sheetId, null);
+    maxRows = (props.gridProperties || {}).rowCount || maxRows;
+    maxCols = (props.gridProperties || {}).columnCount || maxCols;
+  }
+  return { props: props, maxRows: maxRows, maxCols: maxCols };
+}
+
 function runCopyJob_(client, job) {
   // --- source
   const from = resolve_(client, job.fromUrl, job.fromRange);
@@ -44,23 +69,10 @@ function runCopyJob_(client, job) {
   const toGrid = parseA1_(to.range, toProps.sheetId);
   const startRow = toGrid.startRow;
   const startCol = toGrid.startCol;
-  let maxRows = (toProps.gridProperties || {}).rowCount || 0;
-  let maxCols = (toProps.gridProperties || {}).columnCount || 0;
-  const availableRows = maxRows - startRow;
-  const availableCols = maxCols - startCol;
-
-  if (height > availableRows || width > availableCols) {
-    const [lastRow, lastCol] = client.dataExtent(to.spreadsheetId, toProps.title);
-    if (height > availableRows) {
-      client.insertRowsAfter(to.spreadsheetId, toProps.sheetId, lastRow > 0 ? lastRow : maxRows, height - availableRows);
-    }
-    if (width > availableCols) {
-      client.insertColumnsAfter(to.spreadsheetId, toProps.sheetId, lastCol > 0 ? lastCol : maxCols, width - availableCols);
-    }
-    toProps = client.sheetProps(to.spreadsheetId, toProps.sheetId, null);
-    maxRows = (toProps.gridProperties || {}).rowCount || maxRows;
-    maxCols = (toProps.gridProperties || {}).columnCount || maxCols;
-  }
+  const fit = ensureFits_(client, to.spreadsheetId, toProps, startRow, startCol, height, width);
+  toProps = fit.props;
+  const maxRows = fit.maxRows;
+  const maxCols = fit.maxCols;
 
   // An open-ended source clears to the bottom of the target tab; a bounded one
   // clears exactly as many rows as it covers.

@@ -309,12 +309,29 @@ status codes, which the transient/permanent split depends on. Behaviour, layouts
 and the database rebuild are ports of the Python above.
 
 ```
-library/*.gs, appsscript.json   the library (public: run, resume, plan)
+library/*.gs, appsscript.json   the library (public: run, resume, plan, setValues, getValues)
 library/bound/Sync.gs           the sheet button: import / export
 library/bound/SyncDatabase.gs   the same, where import = the database rebuild
 library/bound/appsscript.json   manifest for the spreadsheet's own project
 library/test/run.js             node library/test/run.js - no network, no credentials
 ```
+
+**`setValues` / `getValues`** are the same machinery for scripts that compute their own data —
+REST, retries, pacing, chunked writes and tab growth, no settings tab. A location is
+`{ url, range }`, as in a settings row:
+
+```js
+SheetsSync.setValues({ url: URL, range: 'A2:E' }, rows);                 // one
+SheetsSync.setValues([locationA, locationB], [rowsA, rowsB]);             // several
+const rows = SheetsSync.getValues({ url: URL, range: "'Data'!A2:E" });
+```
+
+The range decides what `setValues` replaces: an anchor (`A2`) only writes; an explicit range
+(`A2:E100`, `A2:E`) is cleared first, so rows left from a longer write disappear. Every
+location is attempted and one error at the end carries `failures: [{ location, message,
+transient }]`. `getValues` pads a bounded range back to its size — the API trims trailing
+blanks — and returns dates as the text the cell shows, which native `getValues()` does not.
+The calling script needs the `spreadsheets` and `script.external_request` scopes.
 
 **Setup.** Create a standalone Apps Script project from `library/`, *Deploy → New deployment
 → Library*, and copy its script id into `LIBRARY_SCRIPT_ID` in `bound/appsscript.json`. In

@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const FILES = ['A1', 'Errors', 'Retry', 'Client', 'Settings', 'Database', 'Sync', 'Main'];
+const FILES = ['A1', 'Errors', 'Retry', 'Client', 'Settings', 'Database', 'Sync', 'Values', 'Main'];
 const source = FILES.map((f) => fs.readFileSync(path.join(__dirname, '..', f + '.gs'), 'utf8')).join('\n');
 
 const logs = [];
@@ -22,6 +22,7 @@ const context = vm.createContext({
     sleep: () => {},
   },
   UrlFetchApp: { fetch: () => { throw new Error('no network in tests'); } },
+  ScriptApp: { getOAuthToken: () => 'TOKEN' },
 });
 // Classes and consts are lexical, so they are not on the global object; export them.
 vm.runInContext(source + `
@@ -527,6 +528,71 @@ test('big writes are split under the payload limit', () => {
   writes.length = 0;
   g.writeGrid_(writer, 'SS', g.grid_(0, 1, 2, 0, 1), 'Data', [['x'.repeat(3000000)]]);
   same(writes, [["'Data'!A2:A2", 1]]); // one oversized row still goes, alone
+});
+
+// ------------------------------------------------- setValues / getValues
+
+class ValuesClient extends CopyClient {
+  timeZone() { return 'Europe/Kyiv'; }
+  setValues(ss, a1, values) {
+    if (ss === 'FLAKYID') throw http(503, { canonical: 'UNAVAILABLE' });
+    super.setValues(ss, a1, values);
+  }
+}
+const at = (range, url = DST) => ({ url: url, range: range });
+
+test('setValues: an anchor only writes, padded and sized to the data', () => {
+  const c = useClient(new ValuesClient());
+  g.setValues(at('A2'), [[1, 2], [3]]);
+  same(c.calls, [['set', "'Data'!A2:B3", 2, 2]]);
+  same(c.written, [[1, 2], [3, '']]);
+});
+
+test('setValues: an explicit range is cleared first', () => {
+  let c = useClient(new ValuesClient());
+  g.setValues(at('A2:E'), [[1, 2]]);
+  same(c.calls, [['clear', "'Data'!A2:E200"], ['set', "'Data'!A2:B2", 1, 2]]);
+  c = useClient(new ValuesClient());
+  g.setValues(at('B3:C100'), [[1, 2]]);
+  same(c.calls, [['clear', "'Data'!B3:C100"], ['set', "'Data'!B3:C3", 1, 2]]);
+  c = useClient(new ValuesClient());
+  g.setValues(at("'Other'!A2:C"), []); // nothing to write: the range is simply emptied
+  same(c.calls, [['clear', "'Data'!A2:C200"]]);
+});
+
+test('setValues: grows the tab and writes Dates as dates', () => {
+  let c = useClient(new ValuesClient(20, 4));
+  g.setValues(at('A5'), Array.from({ length: 40 }, () => [0, 1, 2, 3, 4, 5]));
+  same(c.calls, [['insRows', 150, 24], ['insCols', 5, 2], ['set', "'Data'!A5:F44", 40, 6]]);
+  c = useClient(new ValuesClient());
+  g.setValues(at('A1'), [[new Date('2026-09-29T10:00:00Z'), 'x']]);
+  same(c.written, [['Europe/Kyiv|2026-09-29T10:00:00.000Z', 'x']]);
+});
+
+test('setValues: a list tries every location and reports the failures', () => {
+  const c = useClient(new ValuesClient());
+  const flaky = 'https://docs.google.com/spreadsheets/d/FLAKYID/edit#gid=1';
+  let thrown = null;
+  try {
+    g.setValues([at('A1'), at('A1', 'nope'), at('A1', flaky)], [[[1]], [[2]], [[3]]]);
+  } catch (exc) {
+    thrown = exc;
+  }
+  same(c.calls, [['set', "'Data'!A1:A1", 1, 1]]);
+  same(thrown.failures.map((f) => [f.location, f.transient]), [['nope A1', false], [flaky + ' A1', true]]);
+  assert.throws(() => g.setValues([at('A1')], [[[1]], [[2]]]), /one 2D array of values per location/);
+  assert.throws(() => g.setValues(at('A1'), [1, 2]), /values must be a 2D array/);
+});
+
+test('getValues: bounded ranges are padded back, open ones end at the data', () => {
+  useClient(new ValuesClient(200, 10, [[1], [2, 3]]));
+  same(g.getValues(at('A1:C3')), [[1, '', ''], [2, 3, ''], ['', '', '']]);
+  same(g.getValues(at('A2:C')), [[1, '', ''], [2, 3, '']]);
+  same(g.getValues([at('A1:B1'), at('A1:C2')]), [[[1, '']], [[1, '', ''], [2, 3, '']]]);
+  useClient(new ValuesClient(200, 10, null));
+  same(g.getValues(at('A1:B2')), [['', ''], ['', '']]);
+  same(g.getValues(at('A1:B')), []);
+  assert.throws(() => g.getValues(at('A1', 'nope')), /getValues failed for nope A1: Cannot extract a spreadsheet id/);
 });
 
 g.execute_ = originalExecute;
