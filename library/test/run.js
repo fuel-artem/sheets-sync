@@ -163,7 +163,7 @@ class CopyClient {
   getValues(ss, a1) { this.calls.push(['get', ss, a1]); return this.src; }
   appendRows(ss, sid, n) { this.calls.push(['appendRows', n]); this.rows += n; }
   appendColumns(ss, sid, n) { this.calls.push(['appendCols', n]); this.cols += n; }
-  clearRange(ss, grid, title) { this.calls.push(['clear', g.gridToA1_(grid, title)]); }
+  clearRanges(ss, grids, title) { for (const grid of grids) this.calls.push(['clear', g.gridToA1_(grid, title)]); }
   setValues(ss, a1, values) { this.calls.push(['set', a1, values.length, values[0].length]); this.written = values; }
 }
 
@@ -173,26 +173,26 @@ test('copy: open-ended source clears to the bottom of the tab', () => {
   const c = new CopyClient();
   const r = g.runCopyJob_(c, copy('t1', 'A2:E', 'A2'));
   same([r.status, r.rows, r.columns], ['ok', 12, 5]);
-  same(c.calls, [['get', 'SRCID', "'Data'!A2:E"], ['clear', "'Data'!A2:E200"], ['set', "'Data'!A2:E13", 12, 5]]);
+  same(c.calls, [['get', 'SRCID', "'Data'!A2:E"], ['set', "'Data'!A2:E13", 12, 5], ['clear', "'Data'!A14:E200"]]);
 });
 
 test('copy: bounded source clears as many rows as it covers', () => {
   const c = new CopyClient();
   g.runCopyJob_(c, copy('t2', 'A2:E100', 'B3'));
-  same(c.calls.slice(1), [['clear', "'Data'!B3:F101"], ['set', "'Data'!B3:F14", 12, 5]]);
+  same(c.calls.slice(1), [['set', "'Data'!B3:F14", 12, 5], ['clear', "'Data'!B15:F101"]]);
 });
 
 test('copy: grows the target tab', () => {
   const c = new CopyClient(20, 4, Array.from({ length: 40 }, () => [0, 1, 2, 3, 4, 5]));
   g.runCopyJob_(c, copy('t3', 'A1:F40', 'A5'));
-  same(c.calls.slice(1), [['appendRows', 24], ['appendCols', 2], ['clear', "'Data'!A5:F44"], ['set', "'Data'!A5:F44", 40, 6]]);
+  same(c.calls.slice(1), [['appendRows', 24], ['appendCols', 2], ['set', "'Data'!A5:F44", 40, 6]]); // nothing left over
 });
 
 test('copy: empty source is skipped, jagged rows are padded', () => {
   assert.strictEqual(g.runCopyJob_(new CopyClient(200, 10, null), copy('t4', 'A2:E', 'A2')).status, 'skipped');
   const c = new CopyClient(200, 10, [[1, 2, 3], [1], [1, 2]]);
   g.runCopyJob_(c, copy('t5', 'A2:C', 'A2'));
-  same(c.calls.slice(1), [['clear', "'Data'!A2:C200"], ['set', "'Data'!A2:C4", 3, 3]]);
+  same(c.calls.slice(1), [['set', "'Data'!A2:C4", 3, 3], ['clear', "'Data'!A5:C200"]]);
   same(c.written, [[1, 2, 3], [1, '', ''], [1, 2, '']]);
 });
 
@@ -258,7 +258,7 @@ class DatabaseClient {
   clearBasicFilter() { this.filters.push('clear'); return true; }
   setBasicFilter() { this.filters.push('set'); return true; }
   insertRowsBefore(ss, sid, before, n) { this.inserted.push([before, n]); }
-  clearRange(ss, grid, title) { this.cleared.push(g.gridToA1_(grid, title)); }
+  clearRanges(ss, grids, title) { for (const grid of grids) this.cleared.push(g.gridToA1_(grid, title)); }
   setValues(ss, a1, values) { this.written = [a1, values]; }
 }
 
@@ -278,7 +278,7 @@ test('database: settings read and a full rebuild', () => {
   assert.ok(rows.every((r) => r.length === 37)); // nothing past the rebuild's own columns
   same(c.filters, ['clear', 'set']);
   same(c.inserted, [[10, 1]]);
-  same(c.cleared, ["'General database'!A2:AK10"]);
+  same(c.cleared, ["'General database'!A5:AK10"]); // below the 3 rows written
 });
 
 test('database: formula columns past the rebuild are never touched; a narrow tab fails first', () => {
@@ -287,7 +287,7 @@ test('database: formula columns past the rebuild are never touched; a narrow tab
   const c = new DatabaseClient();
   const jobs = g.readDatabaseSettings_(c, 'SS', 'manual', layout, 'Import Settings');
   g.runDatabaseJob_(c, jobs[0]);
-  same(c.cleared, ["'General database'!A2:AJ10"]);
+  same(c.cleared, ["'General database'!A5:AJ10"]);
   assert.ok(c.written[0].endsWith('!A2:AJ4'), c.written[0]);
 
   const narrow = new DatabaseClient();
@@ -568,10 +568,10 @@ test('setValues: an anchor only writes, padded and sized to the data', () => {
 test('setValues: an explicit range is cleared first', () => {
   let c = useClient(new ValuesClient());
   g.setValues(at('A2:E'), [[1, 2]]);
-  same(c.calls, [['clear', "'Data'!A2:E200"], ['set', "'Data'!A2:B2", 1, 2]]);
+  same(c.calls, [['set', "'Data'!A2:B2", 1, 2], ['clear', "'Data'!A3:E200"], ['clear', "'Data'!C2:E2"]]);
   c = useClient(new ValuesClient());
   g.setValues(at('B3:C100'), [[1, 2]]);
-  same(c.calls, [['clear', "'Data'!B3:C100"], ['set', "'Data'!B3:C3", 1, 2]]);
+  same(c.calls, [['set', "'Data'!B3:C3", 1, 2], ['clear', "'Data'!B4:C100"]]);
   c = useClient(new ValuesClient());
   g.setValues(at("'Other'!A2:C"), []); // nothing to write: the range is simply emptied
   same(c.calls, [['clear', "'Data'!A2:C200"]]);

@@ -207,11 +207,7 @@ function runDatabaseJob_(client, job) {
   output = output.filter((row) => cellText_(row, categoryCol) !== '');
   output = output.filter((row) => dateCols.some((c) => cellText_(row, c) !== ''));
 
-  client.clearRange(spreadsheetId, grid_(sheetId, 1, maxRows, 0, width), tab);
-
-  if (output.length) {
-    writeGrid_(client, spreadsheetId, grid_(sheetId, 1, 1 + output.length, 0, width), tab, padRows_(output, width));
-  }
+  replaceArea_(client, spreadsheetId, grid_(sheetId, 1, maxRows, 0, width), tab, padRows_(output, width));
 
   if (config.restoreFilter) client.setBasicFilter(spreadsheetId, grid_(sheetId, 0, maxRows, 0, maxCols));
 

@@ -29,7 +29,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .a1 import GridRange, index_to_column, parse_a1, sheet_gid_from_url, spreadsheet_id_from_url, split_sheet_title, with_sheet_title
-from .client import SheetsClient, write_grid
+from .client import SheetsClient, replace_area
 from .errors import PermanentError
 from .settings import COL_NAME, SyncJob
 
@@ -376,34 +376,15 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
     output = [row for row in output if str(_cell(row, category_col)).strip() != ""]
     output = [row for row in output if any(str(_cell(row, c)).strip() != "" for c in date_cols)]
 
-    # Rewrite the tab from A2 down.
-    client.clear_range(
+    # Rewrite the owned columns from A2 down.
+    replace_area(
+        client,
         ss_id,
-        GridRange(
-            sheet_id=sheet_id,
-            start_row_index=1,
-            end_row_index=max_rows,
-            start_column_index=0,
-            end_column_index=width,
-        ),
+        GridRange(sheet_id=sheet_id, start_row_index=1, end_row_index=max_rows,
+                  start_column_index=0, end_column_index=width),
         database_tab,
+        [list(row) + [""] * (width - len(row)) for row in output],
     )
-
-    if output:
-        padded = [list(row) + [""] * (width - len(row)) for row in output]
-        write_grid(
-            client,
-            ss_id,
-            GridRange(
-                sheet_id=sheet_id,
-                start_row_index=1,
-                end_row_index=1 + len(padded),
-                start_column_index=0,
-                end_column_index=width,
-            ),
-            database_tab,
-            padded,
-        )
 
     if config.restore_filter and (had_filter or config.restore_filter):
         client.set_basic_filter(

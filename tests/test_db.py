@@ -60,7 +60,7 @@ class Client:
     def clear_basic_filter(self, ss, sid): self.filters.append("clear"); return True
     def set_basic_filter(self, ss, grid): self.filters.append("set"); return True
     def insert_rows_before(self, ss, sid, before, n): self.inserted.append((before,n))
-    def clear_range(self, ss, grid, title): self.cleared.append(grid.to_a1(title))
+    def clear_ranges(self, ss, grids, title): self.cleared.extend(g.to_a1(title) for g in grids)
     def set_values(self, ss, a1, values): self.written=(a1, values)
     def batch_set_values(self, ss, data): self.status={d["range"].split("!")[-1]: d["values"][0][0] for d in data}
 
@@ -161,7 +161,7 @@ layout = DatabaseConfig(transaction_length=23, preserved_columns=0)   # A..AJ ow
 c = Client()
 job = read_database_settings(c, "SS", "manual", layout)[0]
 run_database_job(c, job)
-assert c.cleared == ["'General database'!A2:AJ10"], c.cleared
+assert c.cleared == ["'General database'!A5:AJ10"], c.cleared  # only below the rows written
 assert c.written[0].endswith("!A2:AJ4"), c.written[0]
 narrow = Client()
 narrow.sheet_props = lambda ss, gid=None, title=None, refresh=False: {

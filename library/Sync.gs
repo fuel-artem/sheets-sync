@@ -71,15 +71,6 @@ function runCopyJob_(client, job) {
   const maxRows = fit.maxRows;
   const maxCols = fit.maxCols;
 
-  // An open-ended source clears to the bottom of the target tab; a bounded one
-  // clears exactly as many rows as it covers.
-  const clearEndRow = fromGrid.endRow == null ? maxRows : fromGrid.endRow - fromGrid.startRow + startRow;
-  client.clearRange(
-    to.spreadsheetId,
-    grid_(toProps.sheetId, startRow, Math.min(clearEndRow, maxRows), startCol, Math.min(startCol + width, maxCols)),
-    toProps.title
-  );
-
   // --- write, anchored and sized to the data: the API rejects a write wider
   // than a bounded range, which setValues never did.
   const outWidth = widest_(values);
@@ -87,8 +78,12 @@ function runCopyJob_(client, job) {
     console.warn('[' + job.name + '] source is ' + outWidth + ' columns wide but target range ' +
       to.range + ' is narrower; writing past it');
   }
+  // The area the target loses: an open-ended source empties it to the bottom of
+  // the tab, a bounded one exactly as many rows as it covers.
+  const clearEndRow = fromGrid.endRow == null ? maxRows : fromGrid.endRow - fromGrid.startRow + startRow;
+  const area = grid_(toProps.sheetId, startRow, Math.min(clearEndRow, maxRows), startCol, Math.min(startCol + width, maxCols));
+  replaceArea_(client, to.spreadsheetId, area, toProps.title, padRows_(values, outWidth));
   const target = grid_(toProps.sheetId, startRow, startRow + values.length, startCol, startCol + outWidth);
-  writeGrid_(client, to.spreadsheetId, target, toProps.title, padRows_(values, outWidth));
 
   console.info('[' + job.name + '] wrote ' + values.length + ' x ' + outWidth + ' to ' + gridToA1_(target, toProps.title));
   return result_(job, 'ok', values.length, outWidth);

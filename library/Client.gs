@@ -12,6 +12,31 @@ const MIN_INTERVAL_MS_ = 1000;
 // under 2 MB even when every cell is text in Ukrainian.
 const MAX_WRITE_CHARS_ = 1000000;
 
+/**
+ * Make `area` hold `rows` (already rectangular) from its top-left. The write goes
+ * first and only what it did not cover is cleared afterwards; clearing first would
+ * leave the area empty for as long as a large, chunked write takes.
+ */
+function replaceArea_(client, spreadsheetId, area, sheetTitle, rows) {
+  const width = rows.length ? rows[0].length : 0;
+  const written = grid_(area.sheetId, area.startRow, area.startRow + rows.length, area.startCol, area.startCol + width);
+  if (rows.length && width) writeGrid_(client, spreadsheetId, written, sheetTitle, rows);
+  client.clearRanges(spreadsheetId, leftover_(area, written), sheetTitle);
+}
+
+/** What of `area` lies below `written`, and to its right; both share its top-left. */
+function leftover_(area, written) {
+  const parts = [];
+  if (area.endRow > written.endRow) {
+    parts.push(grid_(area.sheetId, written.endRow, area.endRow, area.startCol, area.endCol));
+  }
+  const rowsEnd = Math.min(written.endRow, area.endRow);
+  if (area.endCol > written.endCol && rowsEnd > area.startRow) {
+    parts.push(grid_(area.sheetId, area.startRow, rowsEnd, written.endCol, area.endCol));
+  }
+  return parts;
+}
+
 /** Write `values` at `grid`'s top-left, in row chunks each under MAX_WRITE_CHARS_. */
 function writeGrid_(client, spreadsheetId, grid, sheetTitle, values) {
   let start = 0;
@@ -129,10 +154,11 @@ class SheetsClient_ {
     );
   }
 
-  /** Values only: formatting, validation and notes survive. */
-  clearRange(spreadsheetId, grid, sheetTitle) {
-    const a1 = gridToA1_(grid, sheetTitle);
-    return this.call_('post', spreadsheetId + '/values/' + encodeURIComponent(a1) + ':clear', null, {}, 'clear ' + a1);
+  /** Values only, in one request: formatting, validation and notes survive. */
+  clearRanges(spreadsheetId, grids, sheetTitle) {
+    if (!grids.length) return;
+    const ranges = grids.map((grid) => gridToA1_(grid, sheetTitle));
+    this.call_('post', spreadsheetId + '/values:batchClear', null, { ranges: ranges }, 'clear ' + ranges.join(', '));
   }
 
   // -------------------------------------------------------------- dimensions
