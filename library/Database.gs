@@ -163,9 +163,6 @@ function runDatabaseJob_(client, job) {
 
   const handbooks = readHandbooks_(client, spreadsheetId, config);
 
-  // A filter left in place fights the rewrite, exactly as in the original.
-  client.clearBasicFilter(spreadsheetId, sheetId);
-
   const existing = client.getValues(
     spreadsheetId, withSheetTitle_('A2:' + indexToColumn_(width - 1), tab), 'FORMATTED_VALUE'
   ) || [];
@@ -173,7 +170,8 @@ function runDatabaseJob_(client, job) {
   let output = existing
     .filter((row) => row.length && cellText_(row, 0) !== '' && !replaced.has(cellText_(row, 0)))
     .map((row) => row.slice(0, width));
-  console.info('kept ' + output.length + ' existing row(s) of ' + existing.length);
+  const keptCount = output.length;
+  console.info('kept ' + keptCount + ' existing row(s) of ' + existing.length);
 
   for (const source of job.sources) {
     const fromId = spreadsheetIdFromUrl_(source.fromUrl);
@@ -189,24 +187,43 @@ function runDatabaseJob_(client, job) {
     console.info('[' + source.name + '] ' + values.length + ' transaction(s)');
   }
 
+  const readCount = output.length - keptCount;
+
   // Drop headers and zero-amount rows.
   const amountCol = databaseIndex_(config.amountIndex);
+  const beforeAmount = output.length;
   output = output.filter((row) => isNonzeroNumber_(cell_(row, amountCol)));
-
-  // Grow the tab before writing, as the original did (on the pre-filter count).
-  if (output.length + config.rowHeadroom > maxRows) {
-    client.insertRowsBefore(spreadsheetId, sheetId, maxRows, output.length + config.rowHeadroom - maxRows);
-    props = client.sheetProps(spreadsheetId, sheetId, null);
-    maxRows = (props.gridProperties || {}).rowCount || maxRows;
-    maxCols = (props.gridProperties || {}).columnCount || maxCols;
-  }
+  // The tab grows on this count, as the original did, before the next filters.
+  const neededRows = output.length + config.rowHeadroom;
 
   // Rows with no category, or with none of the three dates, are not transactions.
   const categoryCol = databaseIndex_(config.keyIndexes[config.requiredKeyPart]);
   const dateCols = Object.values(config.dateIndexes).map(databaseIndex_);
+  const beforeCategory = output.length;
   output = output.filter((row) => cellText_(row, categoryCol) !== '');
+  const beforeDates = output.length;
   output = output.filter((row) => dateCols.some((c) => cellText_(row, c) !== ''));
 
+  const dropped = (beforeAmount - beforeCategory) + ' with no non-zero amount (column ' +
+    indexToColumn_(amountCol) + '), ' + (beforeCategory - beforeDates) + ' with no category (column ' +
+    indexToColumn_(categoryCol) + '), ' + (beforeDates - output.length) + ' with none of the dates (columns ' +
+    dateCols.map(indexToColumn_).join(', ') + ')';
+  console.info('[' + job.name + '] ' + readCount + ' read, ' + keptCount + ' kept; dropped ' + dropped);
+  // Writing nothing would empty the database. Every row failing the filters means
+  // the indexes no longer match the sources, so refuse before touching the tab.
+  if (beforeAmount && !output.length) {
+    throw new PermanentError_('every row was filtered out (' + readCount + ' read, ' + keptCount +
+      ' kept; dropped ' + dropped + '). Check amountIndex, keyIndexes and dateIndexes. Nothing was changed.');
+  }
+
+  if (neededRows > maxRows) {
+    client.insertRowsBefore(spreadsheetId, sheetId, maxRows, neededRows - maxRows);
+    props = client.sheetProps(spreadsheetId, sheetId, null);
+    maxRows = (props.gridProperties || {}).rowCount || maxRows;
+    maxCols = (props.gridProperties || {}).columnCount || maxCols;
+  }
+  // A filter left in place fights the rewrite, exactly as in the original.
+  client.clearBasicFilter(spreadsheetId, sheetId);
   replaceArea_(client, spreadsheetId, grid_(sheetId, 1, maxRows, 0, width), tab, padRows_(output, width));
 
   if (config.restoreFilter) client.setBasicFilter(spreadsheetId, grid_(sheetId, 0, maxRows, 0, maxCols));

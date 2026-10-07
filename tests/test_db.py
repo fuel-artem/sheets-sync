@@ -174,3 +174,17 @@ except PermanentError as e:
 assert narrow.filters == [] and narrow.cleared == [] and narrow.written is None
 print("  owned A:AJ; a 30-column tab is refused before the filter, the clear or the write")
 print("PASS layout")
+
+print()
+print("== a rebuild that filters out every row is refused before touching the tab ==")
+c = Client()
+job = read_database_settings(c, "SS", "manual", DatabaseConfig(key_indexes=(21, 22)))[0]
+try:
+    run_database_job(c, job)
+    raise AssertionError("should be refused")
+except PermanentError as e:
+    assert "every row was filtered out (6 read, 2 kept; dropped 2 with no non-zero amount (column I), " \
+           "6 with no category (column W), 0 with none of the dates (columns B, C, D))" in str(e), e
+assert c.filters == [] and c.cleared == [] and c.inserted == [] and c.written is None
+print("  refused, nothing touched")
+print("PASS refuse")

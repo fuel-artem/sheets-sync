@@ -299,6 +299,19 @@ test('database: formula columns past the rebuild are never touched; a narrow tab
   same(narrow.cleared, []);
 });
 
+test('database: a rebuild that filters out every row is refused before touching the tab', () => {
+  // The category moved but keyIndexes did not: every row, new and kept, loses it.
+  const shifted = g.databaseConfig_({ keyIndexes: [21, 22] });
+  const c = new DatabaseClient();
+  const job = g.readDatabaseSettings_(c, 'SS', 'manual', shifted, 'Import Settings')[0];
+  assert.throws(() => g.runDatabaseJob_(c, job),
+    /every row was filtered out \(6 read, 2 kept; dropped 2 with no non-zero amount \(column I\), 6 with no category \(column W\), 0 with none of the dates \(columns B, C, D\)\)\. Check amountIndex, keyIndexes and dateIndexes\. Nothing was changed\./);
+  same(c.filters, []);
+  same(c.cleared, []);
+  same(c.inserted, []);
+  assert.strictEqual(c.written, undefined);
+});
+
 test('database: column J guard', () => {
   const c = new DatabaseClient([['Bank', DBSRC, 'A2:Z', '', '', 'Bank', true, false, true, 25]]);
   assert.throws(() => g.readDatabaseSettings_(c, 'SS', 'manual', cfg, 'Import Settings'),

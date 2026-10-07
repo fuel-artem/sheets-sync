@@ -317,9 +317,6 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
 
     handbooks = read_handbooks(client, ss_id, config)
 
-    # A filter left in place fights the rewrite, exactly as in the original.
-    had_filter = client.clear_basic_filter(ss_id, sheet_id)
-
     # Existing transactions, as display values, minus the sources being refreshed.
     existing_raw = (
         client.get_values(
@@ -336,7 +333,8 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
         if row and str(_cell(row, 0)).strip() != "" and str(_cell(row, 0)).strip() not in replaced
     ]
     output: List[List[Any]] = [list(row[:width]) for row in kept]
-    log.info("kept %d existing row(s) of %d", len(output), len(existing_raw))
+    kept_count = len(output)
+    log.info("kept %d existing row(s) of %d", kept_count, len(existing_raw))
 
     # Re-read every database source and widen its transactions.
     for source in job.sources:
@@ -356,25 +354,46 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
             output.append(build_row(transaction, source.label, handbooks, config))
         log.info("[%s] %d transaction(s)", source.name, len(values))
 
+    read_count = len(output) - kept_count
+
     # Drop headers and zero-amount rows.
     amount_col = _database_index(config, config.amount_index)
+    before_amount = len(output)
     output = [row for row in output if is_nonzero_number(_cell(row, amount_col))]
-
-    # Grow the tab before writing, as the original did (using the pre-filter count).
-    if len(output) + config.row_headroom > max_rows:
-        client.insert_rows_before(
-            ss_id, sheet_id, max_rows, len(output) + config.row_headroom - max_rows
-        )
-        props = client.sheet_props(ss_id, gid=sheet_id)
-        grid = props.get("gridProperties", {})
-        max_rows = grid.get("rowCount", max_rows)
-        max_cols = grid.get("columnCount", max_cols)
+    # The tab grows on this count, as the original did, before the next filters.
+    needed_rows = len(output) + config.row_headroom
 
     # Rows with no category, or with none of the three dates, are not transactions.
     category_col = _database_index(config, config.key_indexes[config.required_key_part])
     date_cols = [_database_index(config, i) for i in config.date_indexes.values()]
+    before_category = len(output)
     output = [row for row in output if str(_cell(row, category_col)).strip() != ""]
+    before_dates = len(output)
     output = [row for row in output if any(str(_cell(row, c)).strip() != "" for c in date_cols)]
+
+    dropped = (
+        f"{before_amount - before_category} with no non-zero amount (column {index_to_column(amount_col)}), "
+        f"{before_category - before_dates} with no category (column {index_to_column(category_col)}), "
+        f"{before_dates - len(output)} with none of the dates "
+        f"(columns {', '.join(index_to_column(c) for c in date_cols)})"
+    )
+    log.info("[%s] %d read, %d kept; dropped %s", job.name, read_count, kept_count, dropped)
+    # Writing nothing would empty the database. Every row failing the filters means
+    # the indexes no longer match the sources, so refuse before touching the tab.
+    if before_amount and not output:
+        raise PermanentError(
+            f"every row was filtered out ({read_count} read, {kept_count} kept; dropped {dropped}). "
+            "Check amount_index, key_indexes and date_indexes. Nothing was changed."
+        )
+
+    if needed_rows > max_rows:
+        client.insert_rows_before(ss_id, sheet_id, max_rows, needed_rows - max_rows)
+        props = client.sheet_props(ss_id, gid=sheet_id)
+        grid = props.get("gridProperties", {})
+        max_rows = grid.get("rowCount", max_rows)
+        max_cols = grid.get("columnCount", max_cols)
+    # A filter left in place fights the rewrite, exactly as in the original.
+    client.clear_basic_filter(ss_id, sheet_id)
 
     # Rewrite the owned columns from A2 down.
     replace_area(
@@ -386,7 +405,7 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
         [list(row) + [""] * (width - len(row)) for row in output],
     )
 
-    if config.restore_filter and (had_filter or config.restore_filter):
+    if config.restore_filter:
         client.set_basic_filter(
             ss_id,
             GridRange(
