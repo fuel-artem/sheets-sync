@@ -11,8 +11,8 @@ Layout, in database column order:
     22..25   CF block                (from AI Settings A3:G)
     26..29   P&L block               (from AI Settings I3:O)
     30..33   BS block                (from AI Settings Q3:W)
-    34..36   preserved               (preserved_columns: kept on existing rows,
-                                      blank on new ones)
+    then     preserved_columns       (kept on existing rows, blank on new
+                                      ones; none by default)
 
 Those columns are the rebuild's; it reads, clears and writes nothing past them,
 so the tab's own formulas to the right survive. Every number lives in
@@ -53,7 +53,7 @@ class DatabaseConfig:
     transaction_length: int = 21
     ai_block_width: int = 4
     # Columns after the AI blocks that existing rows keep and new rows leave blank.
-    preserved_columns: int = 3
+    preserved_columns: int = 0
     # Indexes *inside the transaction*, not the database row.
     amount_index: int = 7
     date_indexes: Dict[str, int] = field(

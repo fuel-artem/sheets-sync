@@ -33,15 +33,12 @@ const SEND_JOBS_INLINE = false;
 // The database layout, sent with the dispatch so GitHub stores nothing about
 // this spreadsheet. Omit a key to keep its default.
 const DATABASE_CONFIG = {
-  // A..AJ: label, 23 transaction columns, three AI blocks. AK onwards is the tab's
-  // formulas, which the rebuild never touches.
-  transaction_length: 23,
+  // A..AH: label, 21 transaction columns, three AI blocks. Month, Year and
+  // Technical after them are the tab's formulas, which the rebuild never touches.
+  // The VAT version adds VAT (F) and VAT Report Amount (K): transaction_length 23,
+  // amount_index 8, key_indexes [21, 22].
+  transaction_length: 21,
   preserved_columns: 0,
-  // Positions inside the transaction (B = 0). VAT (F) and VAT Report Amount (K)
-  // moved these from the 21-column defaults: Report Amount is J, Category W and
-  // Counterpart Balance X.
-  amount_index: 8,
-  key_indexes: [21, 22],
   database_tab: 'General database',
   ai_tab: 'AI Settings',
   ai_ranges: { cf: 'A3:G', pl: 'I3:O', bs: 'Q3:W' },

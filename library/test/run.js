@@ -213,7 +213,7 @@ test('database: handbook and row building', () => {
   };
   same(hb.cf['Ops¬Payroll¬+'], ['p1', 'p2', '', '']);
   const row = g.buildRow_(tx, 'Bank', hb, cfg);
-  assert.strictEqual(row.length, 37);
+  assert.strictEqual(row.length, 34);
   same(row.slice(22, 26), ['cf1', 'cf2', 'cf3', 'cf4']);
   same(row.slice(26, 30), ['pl1', 'pl2', 'pl3', 'pl4']);
   same(row.slice(30, 34), ['', '', '', '']);
@@ -221,7 +221,7 @@ test('database: handbook and row building', () => {
   same(g.buildRow_(noPl, 'Bank', hb, cfg).slice(26, 30), ['', '', '', '']);
   const positive = tx.slice(); positive[7] = 500;
   same(g.buildRow_(positive, 'Bank', hb, cfg).slice(22, 26), ['p1', 'p2', '', '']);
-  assert.strictEqual(g.buildRow_(['a', 'b', 'c'], 'Bank', hb, cfg).length, 37);
+  assert.strictEqual(g.buildRow_(['a', 'b', 'c'], 'Bank', hb, cfg).length, 34);
 });
 
 const DBSRC = 'https://docs.google.com/spreadsheets/d/SRC/edit#gid=7';
@@ -272,13 +272,13 @@ test('database: settings read and a full rebuild', () => {
 
   const out = g.runDatabaseJob_(c, jobs[0]);
   const [a1, rows] = c.written;
-  same(out, { rows: 3, columns: 37 });
-  assert.strictEqual(a1, "'General database'!A2:AK4");
+  same(out, { rows: 3, columns: 34 });
+  assert.strictEqual(a1, "'General database'!A2:AH4");
   assert.strictEqual(rows[0][0], 'Legacy');
-  assert.ok(rows.every((r) => r.length === 37)); // nothing past the rebuild's own columns
+  assert.ok(rows.every((r) => r.length === 34)); // nothing past the rebuild's own columns
   same(c.filters, ['clear', 'set']);
   same(c.inserted, [[10, 1]]);
-  same(c.cleared, ["'General database'!A5:AK10"]); // below the 3 rows written
+  same(c.cleared, ["'General database'!A5:AH10"]); // below the 3 rows written
 });
 
 test('database: formula columns past the rebuild are never touched; a narrow tab fails first', () => {

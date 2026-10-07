@@ -11,8 +11,8 @@
 //     22..25   CF block                (from AI Settings A3:G)
 //     26..29   P&L block               (from AI Settings I3:O)
 //     30..33   BS block                (from AI Settings Q3:W)
-//     34..36   preserved               (preservedColumns: kept on existing rows,
-//                                       blank on new ones)
+//     then     preservedColumns        (kept on existing rows, blank on new
+//                                       ones; none by default)
 //
 // Those columns are the rebuild's; it reads, clears and writes nothing past them,
 // so the tab's own formulas to the right survive. Every number lives in
@@ -30,7 +30,7 @@ const DATABASE_DEFAULTS_ = {
   transactionLength: 21,
   aiBlockWidth: 4,
   // Columns after the AI blocks that existing rows keep and new rows leave blank.
-  preservedColumns: 3,
+  preservedColumns: 0,
   // Indexes *inside the transaction*, not the database row.
   amountIndex: 7,
   dateIndexes: { cf: 0, pl: 1, bs: 2 },

@@ -23,7 +23,7 @@ print("short AI row padded:", hb["cf"]["Ops\u00acPayroll\u00ac+"])
 tx = ["2026-01-31","2026-01-31","", "x","x","x","x", -500, "", *[""]*10, "Ops","Payroll"]
 row = build_row(tx, "Bank", hb, cfg)
 print("len:", len(row), "| label:", row[0], "| CF:", row[22:26], "| PL:", row[26:30], "| BS:", row[30:34], "| tail:", row[34:])
-assert len(row)==37 and row[22:26]==["cf1","cf2","cf3","cf4"] and row[30:34]==["","","",""]
+assert len(row)==34 and row[22:26]==["cf1","cf2","cf3","cf4"] and row[30:34]==["","","",""]
 tx2 = list(tx); tx2[2]=""; tx2[1]=""   # only CF date -> PL block blanked
 print("PL blanked when no PL date:", build_row(tx2,"Bank",hb,cfg)[26:30])
 tx3 = list(tx); tx3[7]=500             # positive amount -> "+" key -> padded CF entry
