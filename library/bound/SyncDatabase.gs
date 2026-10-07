@@ -10,10 +10,10 @@ const SETTINGS_TABS = { database: 'Import Settings', export: 'Export Settings' }
 
 // The database layout. Omit a key to keep the library default.
 const DATABASE_CONFIG = {
-  transactionLength: 21,
-  keepColumns: 37,
-  trailingBlanks: 5,
-  trailingNew: 3,
+  // A..AJ: label, 23 transaction columns, three AI blocks. AK onwards is the tab's
+  // formulas, which the rebuild never touches.
+  transactionLength: 23,
+  preservedColumns: 0,
   databaseTab: 'General database',
   aiTab: 'AI Settings',
   aiRanges: { cf: 'A3:G', pl: 'I3:O', bs: 'Q3:W' },

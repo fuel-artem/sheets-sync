@@ -1,4 +1,5 @@
 import sys, json, math; sys.path.insert(0, __file__.rsplit('/',2)[0])
+from sheets_sync.errors import PermanentError
 from sheets_sync.database import (js_parse_float, is_nonzero_number, build_handbook,
     build_row, DatabaseConfig, DatabaseJob, DatabaseSource, run_database_job, read_database_settings)
 
@@ -153,3 +154,23 @@ single=[j for j in read_database_settings(Client(),"SSID","manual",DatabaseConfi
 assert len(single)==1 and single[0].name=="General database", [j.name for j in single]
 print("  single target ->", single[0].name, "| url:", repr(single[0].database_url))
 print("PASS grouping")
+
+print()
+print("== formula columns past the rebuild are never touched; a narrow tab fails first ==")
+layout = DatabaseConfig(transaction_length=23, preserved_columns=0)   # A..AJ owned, AK.. formulas
+c = Client()
+job = read_database_settings(c, "SS", "manual", layout)[0]
+run_database_job(c, job)
+assert c.cleared == ["'General database'!A2:AJ10"], c.cleared
+assert c.written[0].endswith("!A2:AJ4"), c.written[0]
+narrow = Client()
+narrow.sheet_props = lambda ss, gid=None, title=None, refresh=False: {
+    "sheetId": 5, "title": title or "General database", "gridProperties": {"rowCount": 10, "columnCount": 30}}
+try:
+    run_database_job(narrow, job)
+    raise AssertionError("a 30-column tab should be refused")
+except PermanentError as e:
+    assert "has 30 columns but the rebuild needs 36 (A:AJ)" in str(e), e
+assert narrow.filters == [] and narrow.cleared == [] and narrow.written is None
+print("  owned A:AJ; a 30-column tab is refused before the filter, the clear or the write")
+print("PASS layout")

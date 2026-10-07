@@ -11,10 +11,12 @@ Layout, in database column order:
     22..25   CF block                (from AI Settings A3:G)
     26..29   P&L block               (from AI Settings I3:O)
     30..33   BS block                (from AI Settings Q3:W)
-    34..36   month / year / spare    (blanked, they are filled elsewhere)
+    34..36   preserved               (preserved_columns: kept on existing rows,
+                                      blank on new ones)
 
-Every one of those numbers lives in :class:`DatabaseConfig`; each client sends
-its own in the dispatch payload.
+Those columns are the rebuild's; it reads, clears and writes nothing past them,
+so the tab's own formulas to the right survive. Every number lives in
+:class:`DatabaseConfig`; each client sends its own in the dispatch payload.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from .settings import COL_NAME, SyncJob
 log = logging.getLogger(__name__)
 
 KEY_SEPARATOR = "\u00ac"  # the "¬" used to join the handbook key
+AI_BLOCKS = ("cf", "pl", "bs")
 
 
 @dataclass
@@ -49,12 +52,8 @@ class DatabaseConfig:
     # databaseLength in the original: how many columns one transaction occupies.
     transaction_length: int = 21
     ai_block_width: int = 4
-    # An existing row keeps this many columns; the rest are blanked so the
-    # month/year formulas are not carried over.
-    keep_columns: int = 37
-    trailing_blanks: int = 5
-    # Columns appended to a freshly built row (month, year, spare).
-    trailing_new: int = 3
+    # Columns after the AI blocks that existing rows keep and new rows leave blank.
+    preserved_columns: int = 3
     # Indexes *inside the transaction*, not the database row.
     amount_index: int = 7
     date_indexes: Dict[str, int] = field(
@@ -99,6 +98,11 @@ class DatabaseConfig:
         data["key_indexes"] = list(self.key_indexes)
         data["status_cells"] = list(self.status_cells)
         return data
+
+    @property
+    def width(self) -> int:
+        """How many columns, from A, the rebuild owns."""
+        return 1 + self.transaction_length + len(AI_BLOCKS) * self.ai_block_width + self.preserved_columns
 
     @property
     def label_offset(self) -> int:
@@ -266,14 +270,14 @@ def build_row(
     )
 
     row: List[Any] = [label, *values]
-    for block in ("cf", "pl", "bs"):
+    for block in AI_BLOCKS:
         date_cell = _cell(values, config.date_indexes[block])
         entry = handbooks.get(block, {}).get(key)
         if date_cell != "" and entry:
             row.extend(entry)
         else:
             row.extend([""] * config.ai_block_width)
-    row.extend([""] * config.trailing_new)
+    row.extend([""] * config.preserved_columns)
     return row
 
 
@@ -302,7 +306,14 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
     grid = props.get("gridProperties", {})
     max_rows = grid.get("rowCount", 0)
     max_cols = grid.get("columnCount", 0)
-    last_column = index_to_column(max_cols - 1)
+    width = config.width
+    # Checked before anything is cleared: a write wider than the tab fails after
+    # the clear, and leaves the database empty.
+    if width > max_cols:
+        raise PermanentError(
+            f"{database_tab} has {max_cols} columns but the rebuild needs {width} "
+            f"(A:{index_to_column(width - 1)}); check transaction_length and preserved_columns"
+        )
 
     handbooks = read_handbooks(client, ss_id, config)
 
@@ -313,7 +324,7 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
     existing_raw = (
         client.get_values(
             ss_id,
-            with_sheet_title(f"A2:{last_column}", database_tab),
+            with_sheet_title(f"A2:{index_to_column(width - 1)}", database_tab),
             value_render_option="FORMATTED_VALUE",
         )
         or []
@@ -324,10 +335,7 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
         for row in existing_raw
         if row and str(_cell(row, 0)).strip() != "" and str(_cell(row, 0)).strip() not in replaced
     ]
-    # Blank the month/year columns so their formulas are not carried over.
-    output: List[List[Any]] = [
-        list(row[: config.keep_columns]) + [""] * config.trailing_blanks for row in kept
-    ]
+    output: List[List[Any]] = [list(row[:width]) for row in kept]
     log.info("kept %d existing row(s) of %d", len(output), len(existing_raw))
 
     # Re-read every database source and widen its transactions.
@@ -376,12 +384,11 @@ def run_database_job(client: SheetsClient, job: DatabaseJob) -> DatabaseOutcome:
             start_row_index=1,
             end_row_index=max_rows,
             start_column_index=0,
-            end_column_index=max_cols,
+            end_column_index=width,
         ),
         database_tab,
     )
 
-    width = max((len(row) for row in output), default=0)
     if output:
         padded = [list(row) + [""] * (width - len(row)) for row in output]
         write_grid(

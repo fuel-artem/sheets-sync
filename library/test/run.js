@@ -272,13 +272,31 @@ test('database: settings read and a full rebuild', () => {
 
   const out = g.runDatabaseJob_(c, jobs[0]);
   const [a1, rows] = c.written;
-  same(out, { rows: 3, columns: 42 });
-  assert.strictEqual(a1, "'General database'!A2:AP4");
+  same(out, { rows: 3, columns: 37 });
+  assert.strictEqual(a1, "'General database'!A2:AK4");
   assert.strictEqual(rows[0][0], 'Legacy');
-  same(rows[0].slice(37), ['', '', '', '', '']); // month/year blanked
+  assert.ok(rows.every((r) => r.length === 37)); // nothing past the rebuild's own columns
   same(c.filters, ['clear', 'set']);
   same(c.inserted, [[10, 1]]);
-  same(c.cleared, ["'General database'!A2:AP10"]);
+  same(c.cleared, ["'General database'!A2:AK10"]);
+});
+
+test('database: formula columns past the rebuild are never touched; a narrow tab fails first', () => {
+  // A..AJ owned, AK..AM formulas: 23 transaction columns and nothing preserved.
+  const layout = g.databaseConfig_({ transactionLength: 23, preservedColumns: 0 });
+  const c = new DatabaseClient();
+  const jobs = g.readDatabaseSettings_(c, 'SS', 'manual', layout, 'Import Settings');
+  g.runDatabaseJob_(c, jobs[0]);
+  same(c.cleared, ["'General database'!A2:AJ10"]);
+  assert.ok(c.written[0].endsWith('!A2:AJ4'), c.written[0]);
+
+  const narrow = new DatabaseClient();
+  narrow.sheetProps = (ss, gid, title) => ({ sheetId: 5, title: title || 'General database',
+    gridProperties: { rowCount: 10, columnCount: 30 } });
+  assert.throws(() => g.runDatabaseJob_(narrow, jobs[0]),
+    /has 30 columns but the rebuild needs 36 \(A:AJ\); check transactionLength and preservedColumns/);
+  same(narrow.filters, []); // failed before the filter, the clear or the write
+  same(narrow.cleared, []);
 });
 
 test('database: column J guard', () => {

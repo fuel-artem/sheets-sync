@@ -33,10 +33,10 @@ const SEND_JOBS_INLINE = false;
 // The database layout, sent with the dispatch so GitHub stores nothing about
 // this spreadsheet. Omit a key to keep its default.
 const DATABASE_CONFIG = {
-  transaction_length: 21,
-  keep_columns: 37,
-  trailing_blanks: 5,
-  trailing_new: 3,
+  // A..AJ: label, 23 transaction columns, three AI blocks. AK onwards is the tab's
+  // formulas, which the rebuild never touches.
+  transaction_length: 23,
+  preserved_columns: 0,
   database_tab: 'General database',
   ai_tab: 'AI Settings',
   ai_ranges: { cf: 'A3:G', pl: 'I3:O', bs: 'Q3:W' },
