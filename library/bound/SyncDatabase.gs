@@ -14,6 +14,11 @@ const DATABASE_CONFIG = {
   // formulas, which the rebuild never touches.
   transactionLength: 23,
   preservedColumns: 0,
+  // Positions inside the transaction (B = 0). VAT (F) and VAT Report Amount (K)
+  // moved these from the 21-column defaults: Report Amount is J, Category W and
+  // Counterpart Balance X.
+  amountIndex: 8,
+  keyIndexes: [21, 22],
   databaseTab: 'General database',
   aiTab: 'AI Settings',
   aiRanges: { cf: 'A3:G', pl: 'I3:O', bs: 'Q3:W' },
