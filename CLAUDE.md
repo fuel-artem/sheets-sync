@@ -81,10 +81,8 @@ workflow): it lists the rows that would run and writes nothing.
 2. **Convert `tests/` to pytest.** They are assert-and-print scripts today.
 3. **The rebuild has never completed.** A database run did reach a real spreadsheet and got
    as far as resolving tabs, where it failed on the tab name, so credentials and dispatch
-   work. Nothing has yet written to a database tab. The rebuild owns columns A to
-   1 + `transaction_length` + 12 + `preserved_columns` and touches nothing past them: A:AH
-   on the standard layout, with Month / Year / Technical formulas after it, and A:AJ on the
-   one VAT version (23 transaction columns, `amount_index` 8, `key_indexes` [21, 22]), which
-   sets those in its own config. Check on a copy first.
+   work. Nothing has yet written to a database tab. The clear covers `A2` to the last
+   column; if columns 38–42 hold live formulas rather than values written elsewhere, that
+   clear wipes them. Check on a copy first.
 4. **Retry waits burn runner minutes** (a retry run sleeps until `not_before`). If outages
    turn out to be frequent, the alternative is a queue branch plus a sweeper cron.

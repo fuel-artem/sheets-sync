@@ -13,7 +13,7 @@ class Fake:
         self.calls.append(("get", ss, a1)); return self.src
     def append_rows(self, ss, sid, n): self.calls.append(("appendRows", n)); self.rows += n
     def append_columns(self, ss, sid, n): self.calls.append(("appendCols", n)); self.cols += n
-    def clear_ranges(self, ss, grids, title): self.calls.extend(("clear", g.to_a1(title)) for g in grids)
+    def clear_range(self, ss, grid, title): self.calls.append(("clear", grid.to_a1(title)))
     def set_values(self, ss, a1, values): self.calls.append(("set", a1, len(values), len(values[0])))
 
 SRC="https://docs.google.com/spreadsheets/d/SRCID/edit#gid=11"

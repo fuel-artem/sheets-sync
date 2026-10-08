@@ -10,12 +10,10 @@ const SETTINGS_TABS = { database: 'Import Settings', export: 'Export Settings' }
 
 // The database layout. Omit a key to keep the library default.
 const DATABASE_CONFIG = {
-  // A..AH: label, 21 transaction columns, three AI blocks. Month, Year and
-  // Technical after them are the tab's formulas, which the rebuild never touches.
-  // The VAT version adds VAT (F) and VAT Report Amount (K): transactionLength 23,
-  // amountIndex 8, keyIndexes [21, 22].
   transactionLength: 21,
-  preservedColumns: 0,
+  keepColumns: 37,
+  trailingBlanks: 5,
+  trailingNew: 3,
   databaseTab: 'General database',
   aiTab: 'AI Settings',
   aiRanges: { cf: 'A3:G', pl: 'I3:O', bs: 'Q3:W' },

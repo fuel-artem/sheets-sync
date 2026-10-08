@@ -163,7 +163,7 @@ class CopyClient {
   getValues(ss, a1) { this.calls.push(['get', ss, a1]); return this.src; }
   appendRows(ss, sid, n) { this.calls.push(['appendRows', n]); this.rows += n; }
   appendColumns(ss, sid, n) { this.calls.push(['appendCols', n]); this.cols += n; }
-  clearRanges(ss, grids, title) { for (const grid of grids) this.calls.push(['clear', g.gridToA1_(grid, title)]); }
+  clearRange(ss, grid, title) { this.calls.push(['clear', g.gridToA1_(grid, title)]); }
   setValues(ss, a1, values) { this.calls.push(['set', a1, values.length, values[0].length]); this.written = values; }
 }
 
@@ -173,26 +173,26 @@ test('copy: open-ended source clears to the bottom of the tab', () => {
   const c = new CopyClient();
   const r = g.runCopyJob_(c, copy('t1', 'A2:E', 'A2'));
   same([r.status, r.rows, r.columns], ['ok', 12, 5]);
-  same(c.calls, [['get', 'SRCID', "'Data'!A2:E"], ['set', "'Data'!A2:E13", 12, 5], ['clear', "'Data'!A14:E200"]]);
+  same(c.calls, [['get', 'SRCID', "'Data'!A2:E"], ['clear', "'Data'!A2:E200"], ['set', "'Data'!A2:E13", 12, 5]]);
 });
 
 test('copy: bounded source clears as many rows as it covers', () => {
   const c = new CopyClient();
   g.runCopyJob_(c, copy('t2', 'A2:E100', 'B3'));
-  same(c.calls.slice(1), [['set', "'Data'!B3:F14", 12, 5], ['clear', "'Data'!B15:F101"]]);
+  same(c.calls.slice(1), [['clear', "'Data'!B3:F101"], ['set', "'Data'!B3:F14", 12, 5]]);
 });
 
 test('copy: grows the target tab', () => {
   const c = new CopyClient(20, 4, Array.from({ length: 40 }, () => [0, 1, 2, 3, 4, 5]));
   g.runCopyJob_(c, copy('t3', 'A1:F40', 'A5'));
-  same(c.calls.slice(1), [['appendRows', 24], ['appendCols', 2], ['set', "'Data'!A5:F44", 40, 6]]); // nothing left over
+  same(c.calls.slice(1), [['appendRows', 24], ['appendCols', 2], ['clear', "'Data'!A5:F44"], ['set', "'Data'!A5:F44", 40, 6]]);
 });
 
 test('copy: empty source is skipped, jagged rows are padded', () => {
   assert.strictEqual(g.runCopyJob_(new CopyClient(200, 10, null), copy('t4', 'A2:E', 'A2')).status, 'skipped');
   const c = new CopyClient(200, 10, [[1, 2, 3], [1], [1, 2]]);
   g.runCopyJob_(c, copy('t5', 'A2:C', 'A2'));
-  same(c.calls.slice(1), [['set', "'Data'!A2:C4", 3, 3], ['clear', "'Data'!A5:C200"]]);
+  same(c.calls.slice(1), [['clear', "'Data'!A2:C200"], ['set', "'Data'!A2:C4", 3, 3]]);
   same(c.written, [[1, 2, 3], [1, '', ''], [1, 2, '']]);
 });
 
@@ -213,7 +213,7 @@ test('database: handbook and row building', () => {
   };
   same(hb.cf['Ops¬Payroll¬+'], ['p1', 'p2', '', '']);
   const row = g.buildRow_(tx, 'Bank', hb, cfg);
-  assert.strictEqual(row.length, 34);
+  assert.strictEqual(row.length, 37);
   same(row.slice(22, 26), ['cf1', 'cf2', 'cf3', 'cf4']);
   same(row.slice(26, 30), ['pl1', 'pl2', 'pl3', 'pl4']);
   same(row.slice(30, 34), ['', '', '', '']);
@@ -221,7 +221,7 @@ test('database: handbook and row building', () => {
   same(g.buildRow_(noPl, 'Bank', hb, cfg).slice(26, 30), ['', '', '', '']);
   const positive = tx.slice(); positive[7] = 500;
   same(g.buildRow_(positive, 'Bank', hb, cfg).slice(22, 26), ['p1', 'p2', '', '']);
-  assert.strictEqual(g.buildRow_(['a', 'b', 'c'], 'Bank', hb, cfg).length, 34);
+  assert.strictEqual(g.buildRow_(['a', 'b', 'c'], 'Bank', hb, cfg).length, 37);
 });
 
 const DBSRC = 'https://docs.google.com/spreadsheets/d/SRC/edit#gid=7';
@@ -258,7 +258,7 @@ class DatabaseClient {
   clearBasicFilter() { this.filters.push('clear'); return true; }
   setBasicFilter() { this.filters.push('set'); return true; }
   insertRowsBefore(ss, sid, before, n) { this.inserted.push([before, n]); }
-  clearRanges(ss, grids, title) { for (const grid of grids) this.cleared.push(g.gridToA1_(grid, title)); }
+  clearRange(ss, grid, title) { this.cleared.push(g.gridToA1_(grid, title)); }
   setValues(ss, a1, values) { this.written = [a1, values]; }
 }
 
@@ -272,44 +272,13 @@ test('database: settings read and a full rebuild', () => {
 
   const out = g.runDatabaseJob_(c, jobs[0]);
   const [a1, rows] = c.written;
-  same(out, { rows: 3, columns: 34 });
-  assert.strictEqual(a1, "'General database'!A2:AH4");
+  same(out, { rows: 3, columns: 42 });
+  assert.strictEqual(a1, "'General database'!A2:AP4");
   assert.strictEqual(rows[0][0], 'Legacy');
-  assert.ok(rows.every((r) => r.length === 34)); // nothing past the rebuild's own columns
+  same(rows[0].slice(37), ['', '', '', '', '']); // month/year blanked
   same(c.filters, ['clear', 'set']);
   same(c.inserted, [[10, 1]]);
-  same(c.cleared, ["'General database'!A5:AH10"]); // below the 3 rows written
-});
-
-test('database: formula columns past the rebuild are never touched; a narrow tab fails first', () => {
-  // A..AJ owned, AK..AM formulas: 23 transaction columns and nothing preserved.
-  const layout = g.databaseConfig_({ transactionLength: 23, preservedColumns: 0 });
-  const c = new DatabaseClient();
-  const jobs = g.readDatabaseSettings_(c, 'SS', 'manual', layout, 'Import Settings');
-  g.runDatabaseJob_(c, jobs[0]);
-  same(c.cleared, ["'General database'!A5:AJ10"]);
-  assert.ok(c.written[0].endsWith('!A2:AJ4'), c.written[0]);
-
-  const narrow = new DatabaseClient();
-  narrow.sheetProps = (ss, gid, title) => ({ sheetId: 5, title: title || 'General database',
-    gridProperties: { rowCount: 10, columnCount: 30 } });
-  assert.throws(() => g.runDatabaseJob_(narrow, jobs[0]),
-    /has 30 columns but the rebuild needs 36 \(A:AJ\); check transactionLength and preservedColumns/);
-  same(narrow.filters, []); // failed before the filter, the clear or the write
-  same(narrow.cleared, []);
-});
-
-test('database: a rebuild that filters out every row is refused before touching the tab', () => {
-  // The category moved but keyIndexes did not: every row, new and kept, loses it.
-  const shifted = g.databaseConfig_({ keyIndexes: [21, 22] });
-  const c = new DatabaseClient();
-  const job = g.readDatabaseSettings_(c, 'SS', 'manual', shifted, 'Import Settings')[0];
-  assert.throws(() => g.runDatabaseJob_(c, job),
-    /every row was filtered out \(6 read, 2 kept; dropped 2 with no non-zero amount \(column I\), 6 with no category \(column W\), 0 with none of the dates \(columns B, C, D\)\)\. Check amountIndex, keyIndexes and dateIndexes\. Nothing was changed\./);
-  same(c.filters, []);
-  same(c.cleared, []);
-  same(c.inserted, []);
-  assert.strictEqual(c.written, undefined);
+  same(c.cleared, ["'General database'!A2:AP10"]);
 });
 
 test('database: column J guard', () => {
@@ -581,10 +550,10 @@ test('setValues: an anchor only writes, padded and sized to the data', () => {
 test('setValues: an explicit range is cleared first', () => {
   let c = useClient(new ValuesClient());
   g.setValues(at('A2:E'), [[1, 2]]);
-  same(c.calls, [['set', "'Data'!A2:B2", 1, 2], ['clear', "'Data'!A3:E200"], ['clear', "'Data'!C2:E2"]]);
+  same(c.calls, [['clear', "'Data'!A2:E200"], ['set', "'Data'!A2:B2", 1, 2]]);
   c = useClient(new ValuesClient());
   g.setValues(at('B3:C100'), [[1, 2]]);
-  same(c.calls, [['set', "'Data'!B3:C3", 1, 2], ['clear', "'Data'!B4:C100"]]);
+  same(c.calls, [['clear', "'Data'!B3:C100"], ['set', "'Data'!B3:C3", 1, 2]]);
   c = useClient(new ValuesClient());
   g.setValues(at("'Other'!A2:C"), []); // nothing to write: the range is simply emptied
   same(c.calls, [['clear', "'Data'!A2:C200"]]);

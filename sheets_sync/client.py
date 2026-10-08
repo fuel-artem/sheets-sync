@@ -48,39 +48,6 @@ def load_credentials(
     )
 
 
-def replace_area(client, spreadsheet_id: str, area: GridRange, sheet_title: str, rows: List[List[Any]]) -> None:
-    """Make `area` hold `rows` (already rectangular) from its top-left.
-
-    The write goes first and only what it did not cover is cleared afterwards;
-    clearing first would leave the area empty for as long as a large, chunked
-    write takes.
-    """
-    width = len(rows[0]) if rows else 0
-    written = GridRange(
-        sheet_id=area.sheet_id,
-        start_row_index=area.start_row_index,
-        end_row_index=area.start_row_index + len(rows),
-        start_column_index=area.start_column_index,
-        end_column_index=area.start_column_index + width,
-    )
-    if rows and width:
-        write_grid(client, spreadsheet_id, written, sheet_title, rows)
-    client.clear_ranges(spreadsheet_id, leftover(area, written), sheet_title)
-
-
-def leftover(area: GridRange, written: GridRange) -> List[GridRange]:
-    """What of `area` lies below `written`, and to its right; both share its top-left."""
-    parts = []
-    if area.end_row_index > written.end_row_index:
-        parts.append(GridRange(area.sheet_id, written.end_row_index, area.end_row_index,
-                               area.start_column_index, area.end_column_index))
-    rows_end = min(written.end_row_index, area.end_row_index)
-    if area.end_column_index > written.end_column_index and rows_end > area.start_row_index:
-        parts.append(GridRange(area.sheet_id, area.start_row_index, rows_end,
-                               written.end_column_index, area.end_column_index))
-    return parts
-
-
 def write_grid(client, spreadsheet_id: str, grid: GridRange, sheet_title: str, values: List[List[Any]]) -> None:
     """Write `values` at `grid`'s top-left, in row chunks each under MAX_WRITE_CHARS."""
     start = 0
@@ -215,17 +182,18 @@ class SheetsClient:
             "batch set",
         )
 
-    def clear_ranges(self, spreadsheet_id: str, grids: List[GridRange], sheet_title: str) -> None:
-        """Values only, in one request: formatting, validation and notes survive."""
-        if not grids:
-            return
-        ranges = [grid.to_a1(sheet_title) for grid in grids]
-        self._execute(
+    def clear_range(self, spreadsheet_id: str, grid: GridRange, sheet_title: str) -> dict:
+        """Clear values only (formatting, validation and notes are preserved)."""
+        return self._execute(
             spreadsheet_id,
             self._svc.spreadsheets()
             .values()
-            .batchClear(spreadsheetId=spreadsheet_id, body={"ranges": ranges}),
-            "clear " + ", ".join(ranges),
+            .clear(
+                spreadsheetId=spreadsheet_id,
+                range=grid.to_a1(sheet_title),
+                body={},
+            ),
+            f"clear {grid.to_a1(sheet_title)}",
         )
 
     # -------------------------------------------------------------- dimensions

@@ -104,15 +104,19 @@ function writeValues_(client, location, values) {
   const width = widest_(values);
   const fit = ensureFits_(client, to.spreadsheetId, to.props, grid.startRow, grid.startCol, values.length, width);
 
-  const timeZone = values.some((row) => row.some((v) => Object.prototype.toString.call(v) === '[object Date]')) ? client.timeZone(to.spreadsheetId) : null;
-  const rows = width ? padRows_(values, width).map((row) => (timeZone ? row.map((v) => cellForWrite_(v, timeZone)) : row)) : [];
+  if (to.range.indexOf(':') !== -1) {
+    const endRow = grid.endRow != null ? grid.endRow : fit.maxRows;
+    const endCol = grid.endCol != null ? grid.endCol : grid.startCol + width;
+    client.clearRange(to.spreadsheetId,
+      grid_(fit.props.sheetId, grid.startRow, Math.min(endRow, fit.maxRows), grid.startCol, Math.min(endCol, fit.maxCols)),
+      fit.props.title);
+  }
+  if (!values.length || !width) return;
 
-  // An explicit range is replaced as a whole; an anchor only takes the data.
-  const area = to.range.indexOf(':') === -1
-    ? grid_(fit.props.sheetId, grid.startRow, grid.startRow + rows.length, grid.startCol, grid.startCol + width)
-    : grid_(fit.props.sheetId, grid.startRow, Math.min(grid.endRow != null ? grid.endRow : fit.maxRows, fit.maxRows),
-      grid.startCol, Math.min(grid.endCol != null ? grid.endCol : grid.startCol + width, fit.maxCols));
-  replaceArea_(client, to.spreadsheetId, area, fit.props.title, rows);
+  const timeZone = values.some((row) => row.some((v) => Object.prototype.toString.call(v) === '[object Date]')) ? client.timeZone(to.spreadsheetId) : null;
+  const rows = padRows_(values, width).map((row) => (timeZone ? row.map((v) => cellForWrite_(v, timeZone)) : row));
+  const target = grid_(fit.props.sheetId, grid.startRow, grid.startRow + rows.length, grid.startCol, grid.startCol + width);
+  writeGrid_(client, to.spreadsheetId, target, fit.props.title, rows);
 }
 
 function readValues_(client, location, dateTimeRenderOption) {

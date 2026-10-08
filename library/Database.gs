@@ -11,15 +11,12 @@
 //     22..25   CF block                (from AI Settings A3:G)
 //     26..29   P&L block               (from AI Settings I3:O)
 //     30..33   BS block                (from AI Settings Q3:W)
-//     then     preservedColumns        (kept on existing rows, blank on new
-//                                       ones; none by default)
+//     34..36   month / year / spare    (blanked, they are filled elsewhere)
 //
-// Those columns are the rebuild's; it reads, clears and writes nothing past them,
-// so the tab's own formulas to the right survive. Every number lives in
-// DATABASE_DEFAULTS_; each spreadsheet sends its own overrides.
+// Every one of those numbers lives in DATABASE_DEFAULTS_; each spreadsheet sends
+// its own overrides.
 
 const KEY_SEPARATOR_ = '¬';
-const AI_BLOCKS_ = ['cf', 'pl', 'bs'];
 
 const DATABASE_DEFAULTS_ = {
   databaseTab: 'General database',
@@ -29,8 +26,12 @@ const DATABASE_DEFAULTS_ = {
   // databaseLength in the original: how many columns one transaction occupies.
   transactionLength: 21,
   aiBlockWidth: 4,
-  // Columns after the AI blocks that existing rows keep and new rows leave blank.
-  preservedColumns: 0,
+  // An existing row keeps this many columns; the rest are blanked so the
+  // month/year formulas are not carried over.
+  keepColumns: 37,
+  trailingBlanks: 5,
+  // Columns appended to a freshly built row (month, year, spare).
+  trailingNew: 3,
   // Indexes *inside the transaction*, not the database row.
   amountIndex: 7,
   dateIndexes: { cf: 0, pl: 1, bs: 2 },
@@ -107,7 +108,7 @@ function buildRow_(transaction, label, handbooks, config) {
   ].join(KEY_SEPARATOR_);
 
   const row = [label].concat(values);
-  for (const block of AI_BLOCKS_) {
+  for (const block of ['cf', 'pl', 'bs']) {
     const entry = (handbooks[block] || {})[key];
     if (cell_(values, config.dateIndexes[block]) !== '' && entry) {
       row.push(...entry);
@@ -115,13 +116,8 @@ function buildRow_(transaction, label, handbooks, config) {
       for (let i = 0; i < config.aiBlockWidth; i++) row.push('');
     }
   }
-  for (let i = 0; i < config.preservedColumns; i++) row.push('');
+  for (let i = 0; i < config.trailingNew; i++) row.push('');
   return row;
-}
-
-/** How many columns, from A, the rebuild owns. */
-function databaseWidth_(config) {
-  return 1 + config.transactionLength + AI_BLOCKS_.length * config.aiBlockWidth + config.preservedColumns;
 }
 
 /** The source label sits at database column 0, so transaction field i is at i + 1. */
@@ -153,25 +149,21 @@ function runDatabaseJob_(client, job) {
   const sheetId = props.sheetId;
   let maxRows = (props.gridProperties || {}).rowCount || 0;
   let maxCols = (props.gridProperties || {}).columnCount || 0;
-  const width = databaseWidth_(config);
-  // Checked before anything is cleared: a write wider than the tab fails after
-  // the clear, and leaves the database empty.
-  if (width > maxCols) {
-    throw new PermanentError_(tab + ' has ' + maxCols + ' columns but the rebuild needs ' + width +
-      ' (A:' + indexToColumn_(width - 1) + '); check transactionLength and preservedColumns');
-  }
 
   const handbooks = readHandbooks_(client, spreadsheetId, config);
 
+  // A filter left in place fights the rewrite, exactly as in the original.
+  client.clearBasicFilter(spreadsheetId, sheetId);
+
   const existing = client.getValues(
-    spreadsheetId, withSheetTitle_('A2:' + indexToColumn_(width - 1), tab), 'FORMATTED_VALUE'
+    spreadsheetId, withSheetTitle_('A2:' + indexToColumn_(maxCols - 1), tab), 'FORMATTED_VALUE'
   ) || [];
   const replaced = new Set(job.replacedLabels.map((label) => String(label).trim()));
   let output = existing
     .filter((row) => row.length && cellText_(row, 0) !== '' && !replaced.has(cellText_(row, 0)))
-    .map((row) => row.slice(0, width));
-  const keptCount = output.length;
-  console.info('kept ' + keptCount + ' existing row(s) of ' + existing.length);
+    // Blank the month/year columns so their formulas are not carried over.
+    .map((row) => row.slice(0, config.keepColumns).concat(new Array(config.trailingBlanks).fill('')));
+  console.info('kept ' + output.length + ' existing row(s) of ' + existing.length);
 
   for (const source of job.sources) {
     const fromId = spreadsheetIdFromUrl_(source.fromUrl);
@@ -187,44 +179,30 @@ function runDatabaseJob_(client, job) {
     console.info('[' + source.name + '] ' + values.length + ' transaction(s)');
   }
 
-  const readCount = output.length - keptCount;
-
   // Drop headers and zero-amount rows.
   const amountCol = databaseIndex_(config.amountIndex);
-  const beforeAmount = output.length;
   output = output.filter((row) => isNonzeroNumber_(cell_(row, amountCol)));
-  // The tab grows on this count, as the original did, before the next filters.
-  const neededRows = output.length + config.rowHeadroom;
 
-  // Rows with no category, or with none of the three dates, are not transactions.
-  const categoryCol = databaseIndex_(config.keyIndexes[config.requiredKeyPart]);
-  const dateCols = Object.values(config.dateIndexes).map(databaseIndex_);
-  const beforeCategory = output.length;
-  output = output.filter((row) => cellText_(row, categoryCol) !== '');
-  const beforeDates = output.length;
-  output = output.filter((row) => dateCols.some((c) => cellText_(row, c) !== ''));
-
-  const dropped = (beforeAmount - beforeCategory) + ' with no non-zero amount (column ' +
-    indexToColumn_(amountCol) + '), ' + (beforeCategory - beforeDates) + ' with no category (column ' +
-    indexToColumn_(categoryCol) + '), ' + (beforeDates - output.length) + ' with none of the dates (columns ' +
-    dateCols.map(indexToColumn_).join(', ') + ')';
-  console.info('[' + job.name + '] ' + readCount + ' read, ' + keptCount + ' kept; dropped ' + dropped);
-  // Writing nothing would empty the database. Every row failing the filters means
-  // the indexes no longer match the sources, so refuse before touching the tab.
-  if (beforeAmount && !output.length) {
-    throw new PermanentError_('every row was filtered out (' + readCount + ' read, ' + keptCount +
-      ' kept; dropped ' + dropped + '). Check amountIndex, keyIndexes and dateIndexes. Nothing was changed.');
-  }
-
-  if (neededRows > maxRows) {
-    client.insertRowsBefore(spreadsheetId, sheetId, maxRows, neededRows - maxRows);
+  // Grow the tab before writing, as the original did (on the pre-filter count).
+  if (output.length + config.rowHeadroom > maxRows) {
+    client.insertRowsBefore(spreadsheetId, sheetId, maxRows, output.length + config.rowHeadroom - maxRows);
     props = client.sheetProps(spreadsheetId, sheetId, null);
     maxRows = (props.gridProperties || {}).rowCount || maxRows;
     maxCols = (props.gridProperties || {}).columnCount || maxCols;
   }
-  // A filter left in place fights the rewrite, exactly as in the original.
-  client.clearBasicFilter(spreadsheetId, sheetId);
-  replaceArea_(client, spreadsheetId, grid_(sheetId, 1, maxRows, 0, width), tab, padRows_(output, width));
+
+  // Rows with no category, or with none of the three dates, are not transactions.
+  const categoryCol = databaseIndex_(config.keyIndexes[config.requiredKeyPart]);
+  const dateCols = Object.values(config.dateIndexes).map(databaseIndex_);
+  output = output.filter((row) => cellText_(row, categoryCol) !== '');
+  output = output.filter((row) => dateCols.some((c) => cellText_(row, c) !== ''));
+
+  client.clearRange(spreadsheetId, grid_(sheetId, 1, maxRows, 0, maxCols), tab);
+
+  const width = widest_(output);
+  if (output.length) {
+    writeGrid_(client, spreadsheetId, grid_(sheetId, 1, 1 + output.length, 0, width), tab, padRows_(output, width));
+  }
 
   if (config.restoreFilter) client.setBasicFilter(spreadsheetId, grid_(sheetId, 0, maxRows, 0, maxCols));
 

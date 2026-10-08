@@ -1,5 +1,4 @@
 import sys, json, math; sys.path.insert(0, __file__.rsplit('/',2)[0])
-from sheets_sync.errors import PermanentError
 from sheets_sync.database import (js_parse_float, is_nonzero_number, build_handbook,
     build_row, DatabaseConfig, DatabaseJob, DatabaseSource, run_database_job, read_database_settings)
 
@@ -23,7 +22,7 @@ print("short AI row padded:", hb["cf"]["Ops\u00acPayroll\u00ac+"])
 tx = ["2026-01-31","2026-01-31","", "x","x","x","x", -500, "", *[""]*10, "Ops","Payroll"]
 row = build_row(tx, "Bank", hb, cfg)
 print("len:", len(row), "| label:", row[0], "| CF:", row[22:26], "| PL:", row[26:30], "| BS:", row[30:34], "| tail:", row[34:])
-assert len(row)==34 and row[22:26]==["cf1","cf2","cf3","cf4"] and row[30:34]==["","","",""]
+assert len(row)==37 and row[22:26]==["cf1","cf2","cf3","cf4"] and row[30:34]==["","","",""]
 tx2 = list(tx); tx2[2]=""; tx2[1]=""   # only CF date -> PL block blanked
 print("PL blanked when no PL date:", build_row(tx2,"Bank",hb,cfg)[26:30])
 tx3 = list(tx); tx3[7]=500             # positive amount -> "+" key -> padded CF entry
@@ -60,7 +59,7 @@ class Client:
     def clear_basic_filter(self, ss, sid): self.filters.append("clear"); return True
     def set_basic_filter(self, ss, grid): self.filters.append("set"); return True
     def insert_rows_before(self, ss, sid, before, n): self.inserted.append((before,n))
-    def clear_ranges(self, ss, grids, title): self.cleared.extend(g.to_a1(title) for g in grids)
+    def clear_range(self, ss, grid, title): self.cleared.append(grid.to_a1(title))
     def set_values(self, ss, a1, values): self.written=(a1, values)
     def batch_set_values(self, ss, data): self.status={d["range"].split("!")[-1]: d["values"][0][0] for d in data}
 
@@ -154,37 +153,3 @@ single=[j for j in read_database_settings(Client(),"SSID","manual",DatabaseConfi
 assert len(single)==1 and single[0].name=="General database", [j.name for j in single]
 print("  single target ->", single[0].name, "| url:", repr(single[0].database_url))
 print("PASS grouping")
-
-print()
-print("== formula columns past the rebuild are never touched; a narrow tab fails first ==")
-layout = DatabaseConfig(transaction_length=23, preserved_columns=0)   # A..AJ owned, AK.. formulas
-c = Client()
-job = read_database_settings(c, "SS", "manual", layout)[0]
-run_database_job(c, job)
-assert c.cleared == ["'General database'!A5:AJ10"], c.cleared  # only below the rows written
-assert c.written[0].endswith("!A2:AJ4"), c.written[0]
-narrow = Client()
-narrow.sheet_props = lambda ss, gid=None, title=None, refresh=False: {
-    "sheetId": 5, "title": title or "General database", "gridProperties": {"rowCount": 10, "columnCount": 30}}
-try:
-    run_database_job(narrow, job)
-    raise AssertionError("a 30-column tab should be refused")
-except PermanentError as e:
-    assert "has 30 columns but the rebuild needs 36 (A:AJ)" in str(e), e
-assert narrow.filters == [] and narrow.cleared == [] and narrow.written is None
-print("  owned A:AJ; a 30-column tab is refused before the filter, the clear or the write")
-print("PASS layout")
-
-print()
-print("== a rebuild that filters out every row is refused before touching the tab ==")
-c = Client()
-job = read_database_settings(c, "SS", "manual", DatabaseConfig(key_indexes=(21, 22)))[0]
-try:
-    run_database_job(c, job)
-    raise AssertionError("should be refused")
-except PermanentError as e:
-    assert "every row was filtered out (6 read, 2 kept; dropped 2 with no non-zero amount (column I), " \
-           "6 with no category (column W), 0 with none of the dates (columns B, C, D))" in str(e), e
-assert c.filters == [] and c.cleared == [] and c.inserted == [] and c.written is None
-print("  refused, nothing touched")
-print("PASS refuse")

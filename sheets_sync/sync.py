@@ -28,7 +28,7 @@ from .a1 import (
     split_sheet_title,
     with_sheet_title,
 )
-from .client import SheetsClient, replace_area
+from .client import SheetsClient, write_grid
 from .database import DatabaseConfig, DatabaseJob, run_database_job, read_database_settings
 from .errors import PermanentError, TransientError, classify
 from .settings import TIME_FORMAT, SyncJob, read_jobs, write_status
@@ -138,13 +138,14 @@ def run_job(client: SheetsClient, job: SyncJob) -> JobResult:
         if from_grid.end_row_index is None
         else from_grid.end_row_index - from_grid.start_row_index + start_row
     )
-    area = GridRange(
+    clear = GridRange(
         sheet_id=to_props["sheetId"],
         start_row_index=start_row,
         end_row_index=min(clear_end_row, max_rows),
         start_column_index=start_col,
         end_column_index=min(start_col + width, max_cols),
     )
+    client.clear_range(to_ss, clear, to_props["title"])
 
     # --- write -------------------------------------------------------------
     out_width = max(len(row) for row in values)
@@ -170,7 +171,7 @@ def run_job(client: SheetsClient, job: SyncJob) -> JobResult:
         start_column_index=start_col,
         end_column_index=start_col + out_width,
     )
-    replace_area(client, to_ss, area, to_props["title"], padded)
+    write_grid(client, to_ss, target, to_props["title"], padded)
 
     log.info(
         "[%s] wrote %d x %d to %s",

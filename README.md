@@ -140,17 +140,13 @@ Exit codes: `0` clean or retry scheduled, `1` permanent failure, `2` bad usage,
 2. drop the basic filter, read `General database` as **display values**, and keep only rows
    whose source label is not being refreshed — the label list covers every enabled settings
    row, database or not;
-3. keep only the columns the rebuild owns: the label, `transaction_length` transaction
-   columns, three 4-column AI blocks and `preserved_columns`. Everything right of that is the
-   tab's own formulas and is never read, cleared or written. If the tab is narrower than
-   that, the run fails before touching anything;
+3. blank columns 38–42 of those survivors so the month/year formulas are not carried over;
 4. re-read each database source, pad or truncate each transaction to `transaction_length`,
    take the sign from the amount, look up the three blocks and append them — a block stays
    empty unless its own date cell is filled;
 5. drop rows whose amount is not a non-zero number, grow the tab if needed, drop rows with no
    category or with none of the three dates;
-6. write the result from A2, then clear what is left of the owned columns below it, restore
-   the filter.
+6. clear from A2, write the result, restore the filter.
 
 The layout is a `DatabaseConfig`, sent as `database_config` in the dispatch payload — the Apps
 Script holds it in one object at the top of `GithubTriggerDatabase.gs`, where the original kept
@@ -206,9 +202,8 @@ Two request limits come from the Sheets [troubleshooting guide](https://develope
 as ways to avoid earning a 503 in the first place: at most **one request per second per
 spreadsheet** (the client paces itself), and **payloads under 2 MB** (writes are split into
 row chunks of at most a million JSON characters, which stays under 2 MB even for
-all-Cyrillic text). Every replace writes first and clears only what the new data did not cover, so the target
-never sits empty while a large write uploads. A write that fails halfway leaves new rows on
-top and old ones below them until the retry redoes the whole row.
+all-Cyrillic text). A split write is not atomic, but a write never was: the range is cleared
+first either way, and a retry redoes the whole row.
 
 Three layers of retry, each only for transient failures:
 
