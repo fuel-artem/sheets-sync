@@ -311,7 +311,8 @@ status codes, which the transient/permanent split depends on. Behaviour, layouts
 and the database rebuild are ports of the Python above.
 
 ```
-library/*.gs, appsscript.json   the library (public: run, resume, plan, setValues, getValues)
+library/*.gs, appsscript.json   the library (public: run, resume, plan, setValues, getValues,
+                                setNumberFormats, ensureTab)
 library/bound/Sync.gs           the sheet button: import / export
 library/bound/SyncDatabase.gs   the same, where import = the database rebuild
 library/bound/appsscript.json   manifest for the spreadsheet's own project
@@ -334,7 +335,15 @@ location is attempted and one error at the end carries `failures: [{ location, m
 transient }]`. `getValues` pads a bounded range back to its size — the API trims trailing
 blanks — and returns dates as the text the cell shows, which native `getValues()` does not;
 `getValues(location, { serialDates: true })` gives serial numbers instead.
-The calling script needs the `spreadsheets` and `script.external_request` scopes.
+`setNumberFormats(locations, formats)` is `setNumberFormat` for one location or a list,
+sent as one request per spreadsheet; a format is a pattern, `@`, `General`, or the API's
+`{ type, pattern }`. It grows the tab to fit, because formats usually have to go on *before*
+the values: `USER_ENTERED` reads `00123` as a number unless its cell is already plain text.
+`ensureTab(url, title)` is `getSheetByName(title) || insertSheet(title)`.
+
+All five take `{ startedAt }` as their last argument - `Date.now()` from the top of the
+calling script - so retries stop waiting before the execution limit. The calling script
+needs the `spreadsheets` and `script.external_request` scopes.
 
 **Setup.** Create a standalone Apps Script project from `library/`, *Deploy → New deployment
 → Library*, and copy its script id into `LIBRARY_SCRIPT_ID` in `bound/appsscript.json`. In

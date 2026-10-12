@@ -40,14 +40,84 @@ function setValues(locations, values, options) {
     try {
       writeValues_(client, target, blocks[i]);
     } catch (exc) {
-      const error = classify_(exc);
-      failures.push({ location: describeLocation_(target), message: error.message, transient: error instanceof TransientError_ });
+      failures.push(failure_(target, exc));
     }
   });
-  if (failures.length) {
-    const error = new Error('setValues failed for ' + failures.map((f) => f.location + ': ' + f.message).join('; '));
-    error.failures = failures;
-    throw error;
+  throwFailures_('setValues', failures);
+}
+
+/**
+ * Set number formats, like Range.setNumberFormat(), on one location or a list of
+ * them, one format per location. All locations in one spreadsheet go out as one
+ * request.
+ *
+ *   setNumberFormats({ url, range: "'Shopify'!C2:C" }, 'yyyy-mm-dd')
+ *   setNumberFormats([locationA, locationB], ['@', 'General'])
+ *
+ * A format is a pattern as setNumberFormat takes it ('yyyy-mm-dd', '0.00'), '@'
+ * for plain text, 'General' for automatic, or the API's own
+ * { type, pattern }. Formats usually go on before the values they are for - a
+ * plain-text column has to be plain text before '00123' is written, or the
+ * write reads it as a number - so the tab grows to fit a bounded range first.
+ * Failures are reported as in setValues.
+ */
+function setNumberFormats(locations, formats, options) {
+  const many = Array.isArray(locations);
+  const targets = many ? locations : [locations];
+  const list = many ? formats : [formats];
+  if (!Array.isArray(list) || list.length !== targets.length) {
+    throw new Error('setNumberFormats needs one format per location');
+  }
+  const client = new SheetsClient_(ScriptApp.getOAuthToken(), clock_(options && options.startedAt));
+  const failures = [];
+  const bySpreadsheet = new Map();
+  targets.forEach((target, i) => {
+    try {
+      checkLocation_(target);
+      const at = resolve_(client, target.url, target.range);
+      const grid = parseA1_(at.range, at.props.sheetId);
+      const height = grid.endRow != null ? grid.endRow - grid.startRow : 0;
+      const width = grid.endCol != null ? grid.endCol - grid.startCol : 0;
+      ensureFits_(client, at.spreadsheetId, at.props, grid.startRow, grid.startCol, height, width);
+      if (!bySpreadsheet.has(at.spreadsheetId)) bySpreadsheet.set(at.spreadsheetId, []);
+      bySpreadsheet.get(at.spreadsheetId).push({
+        target: target,
+        request: {
+          repeatCell: {
+            range: gridToApi_(grid),
+            cell: { userEnteredFormat: numberFormat_(list[i]) },
+            fields: 'userEnteredFormat.numberFormat',
+          },
+        },
+      });
+    } catch (exc) {
+      failures.push(failure_(target, exc));
+    }
+  });
+  for (const [spreadsheetId, items] of bySpreadsheet) {
+    try {
+      client.batchUpdate_(spreadsheetId, items.map((item) => item.request), 'set number formats');
+    } catch (exc) {
+      items.forEach((item) => failures.push(failure_(item.target, exc)));
+    }
+  }
+  throwFailures_('setNumberFormats', failures);
+}
+
+/** Add a tab unless it is there, like getSheetByName(title) || insertSheet(title). */
+function ensureTab(url, title, options) {
+  try {
+    const client = new SheetsClient_(ScriptApp.getOAuthToken(), clock_(options && options.startedAt));
+    const spreadsheetId = spreadsheetIdFromUrl_(url);
+    if (hasTab_(client, spreadsheetId, title, false)) return;
+    try {
+      client.batchUpdate_(spreadsheetId, [{ addSheet: { properties: { title: title } } }], 'add tab ' + title);
+    } catch (exc) {
+      // Another execution may have added it in between.
+      if (!hasTab_(client, spreadsheetId, title, true)) throw exc;
+    }
+  } catch (exc) {
+    throw new Error("ensureTab failed for '" + title + "' in " + url + ': ' + classify_(exc).message);
   }
 }
 
@@ -74,6 +144,45 @@ function getValues(locations, options) {
     }
   });
   return many ? out : out[0];
+}
+
+function failure_(location, exc) {
+  const error = classify_(exc);
+  return { location: describeLocation_(location), message: error.message, transient: error instanceof TransientError_ };
+}
+
+function throwFailures_(name, failures) {
+  if (!failures.length) return;
+  const error = new Error(name + ' failed for ' + failures.map((f) => f.location + ': ' + f.message).join('; '));
+  error.failures = failures;
+  throw error;
+}
+
+function hasTab_(client, spreadsheetId, title, refresh) {
+  return (client.metadata(spreadsheetId, refresh).sheets || []).some((s) => s.properties.title === title);
+}
+
+/** setNumberFormat's argument as the API's userEnteredFormat. */
+function numberFormat_(format) {
+  if (format && typeof format === 'object') return { numberFormat: format };
+  const pattern = String(format == null ? '' : format);
+  // No numberFormat at all is what the UI calls Automatic.
+  if (pattern === '' || pattern.toLowerCase() === 'general') return {};
+  if (pattern === '@') return { numberFormat: { type: 'TEXT' } };
+  return { numberFormat: { type: formatType_(pattern), pattern: pattern } };
+}
+
+/** The API wants a type next to the pattern; read it off the pattern's tokens. */
+function formatType_(pattern) {
+  const tokens = pattern.replace(/"[^"]*"|\\./g, '');
+  const date = /[yd]/i.test(tokens) || /mmm/i.test(tokens);
+  const time = /[hs]/i.test(tokens) || /am\/pm/i.test(tokens);
+  if (date && time) return 'DATE_TIME';
+  if (date) return 'DATE';
+  if (time) return 'TIME';
+  if (tokens.indexOf('%') !== -1) return 'PERCENT';
+  if (/E[+-]/i.test(tokens)) return 'SCIENTIFIC';
+  return 'NUMBER';
 }
 
 function describeLocation_(location) {
