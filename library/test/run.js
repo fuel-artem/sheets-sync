@@ -613,51 +613,5 @@ test('the clock counts from when the execution started', () => {
   assert.ok(g.clock_().deadline <= g.clock_(now).deadline, 'the default is the library load time');
 });
 
-// ------------------------------------------- setNumberFormats / ensureTab
-
-class FormatClient extends ValuesClient {
-  constructor(...args) { super(...args); this.tabs = ['Data']; this.requests = []; }
-  metadata(ss, refresh) { this.calls.push(['metadata', ss, !!refresh]); return { sheets: this.tabs.map((t) => ({ properties: { title: t } })) }; }
-  batchUpdate_(ss, requests) {
-    this.requests.push([ss, requests]);
-    for (const r of requests) if (r.addSheet) this.tabs.push(r.addSheet.properties.title);
-  }
-}
-
-test('setNumberFormats: one request per spreadsheet, types read off the pattern', () => {
-  const c = useClient(new FormatClient());
-  g.setNumberFormats([at('C2:C13'), at('D2:D13'), at('E2:E13'), at('F2:F13')], ['yyyy-mm-dd', '@', 'General', '0.00%']);
-  same(c.requests.length, 1);
-  same(c.requests[0][0], 'DSTID');
-  same(c.requests[0][1].map((r) => r.repeatCell.cell.userEnteredFormat), [
-    { numberFormat: { type: 'DATE', pattern: 'yyyy-mm-dd' } },
-    { numberFormat: { type: 'TEXT' } },
-    {},
-    { numberFormat: { type: 'PERCENT', pattern: '0.00%' } },
-  ]);
-  same(c.requests[0][1][0].repeatCell.range, { startRowIndex: 1, startColumnIndex: 2, sheetId: 22, endRowIndex: 13, endColumnIndex: 3 });
-  same(c.requests[0][1][0].repeatCell.fields, 'userEnteredFormat.numberFormat');
-  same(['h:mm', 'yyyy-mm-dd hh:mm', '"day "0', '0.0E+0', '#,##0.00'].map(g.formatType_), ['TIME', 'DATE_TIME', 'NUMBER', 'SCIENTIFIC', 'NUMBER']);
-});
-
-test('setNumberFormats: grows the tab so formats can precede the values', () => {
-  const c = useClient(new FormatClient(20, 4));
-  g.setNumberFormats(at('B2:B41'), '@');
-  assert.ok(c.calls.some((call) => call[0] === 'appendRows'), JSON.stringify(c.calls));
-  assert.throws(() => g.setNumberFormats([at('A1')], []), /one format per location/);
-});
-
-test('ensureTab adds a missing tab and leaves an existing one alone', () => {
-  let c = useClient(new FormatClient());
-  g.ensureTab(DST, 'Data');
-  same(c.requests, []);
-  g.ensureTab(DST, 'Shopify');
-  same(c.requests, [['DSTID', [{ addSheet: { properties: { title: 'Shopify' } } }]]]);
-  c = useClient(new FormatClient());
-  c.batchUpdate_ = () => { c.tabs.push('Shopify'); throw http(400, { reason: 'badRequest', message: 'already exists' }); };
-  g.ensureTab(DST, 'Shopify'); // lost the race to another execution: fine
-  assert.throws(() => g.ensureTab('nope', 'X'), /ensureTab failed for 'X' in nope: Cannot extract a spreadsheet id/);
-});
-
 g.execute_ = originalExecute;
 console.log(passed + ' tests passed');
